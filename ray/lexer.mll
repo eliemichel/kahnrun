@@ -25,7 +25,7 @@
 			fun s ->
 				try
 					Hashtbl.find h (String.lowercase s)
-				with Not_found -> raise Lexer.Error
+				with Not_found -> raise (Error "Invalid bloc identifier")
 	
 	
 	let convert_hexa c = match Char.lowercase c with
@@ -59,6 +59,8 @@
 					pos_lnum = pos.pos_lnum + 1;
 					pos_bol = pos.pos_cnum
 				}
+	
+	let convert_float = float_of_string (* TODO: octal and binary *)	
 }
 
 let chiffre = ['0'-'9']
@@ -81,7 +83,7 @@ rule token = parse
 	| '\n'                      { newline lexbuf ; token lexbuf}
 	| whitespace                { token lexbuf }
 	| ident as id               { id_or_keyword id }
-	| flottant as n             { FLOAT n }
+	| flottant as n             { FLOAT (convert_float n) }
 	| '{'    { LBRACE }
 	| '}'    { RBRACE }
 	| ','    { COMMA }

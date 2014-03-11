@@ -24,52 +24,46 @@ decl:
 	o = obj { (o, []) } (* Ajouter les pigments *)
 
 obj:
-	| c = combination { Combination c     }
-	| p = primitive   { Primitive (p, []) }
+	| c = combination { Combination c }
+	| p = primitive   { Primitive   p }
 
-repeat(X, Name):
-	| x = X                         { x        }
-	| x = X COMMA y = repeat(X, f)  { Combination (Name (x, y)) }
-
-bloc(NAME, Name):
-	NAME LBRACE
-		x = obj COMMA
-		y = repeat(obj, Name)
-	RBRACE
-		{ Name (x, y) }
 
 combination:
-	| b = bloc(UNION, Union)              { b }
-	| b = bloc(DIFFERENCE, Difference)    { b }
-	| b = bloc(INTERSECION, Ast.Intersection) { b }
-	| b = bloc(MERGE, Merge)              { b }
+	| UNION LBRACE l = separated_nonempty_list(COMMA, obj) RBRACE
+		{ Union l }
+	| DIFFERENCE LBRACE l = separated_nonempty_list(COMMA, obj) RBRACE
+		{ Difference l }
+	| INTERSECTION LBRACE l = separated_nonempty_list(COMMA, obj) RBRACE
+		{ Intersection l }
+	| MERGE LBRACE l = separated_nonempty_list(COMMA, obj) RBRACE
+		{ Merge l }
 
 vector:
-	| RCHEVRON x = FLOAT COMMA y = FLOAT COMMA z = FLOAT RCHEVRON { (x, y, z) }
+	| LCHEVRON x = FLOAT COMMA y = FLOAT COMMA z = FLOAT RCHEVRON { (x, y, z) }
 
 primitive:
 	|
 	BOX LBRACE
-		p1 = point COMMA
-		p2 = point
+		p1 = vector COMMA
+		p2 = vector
 	RBRACE
 		{ Box (p1, p2) }
 	|
 	CONE LBRACE
-		p1 = point COMMA r1 = FLOAT COMMA
-		p2 = point COMMA r2 = FLOAT
+		p1 = vector COMMA r1 = FLOAT COMMA
+		p2 = vector COMMA r2 = FLOAT
 	RBRACE
 		{ Cone (p1, r1, p2, r2) }
 	|
 	CYLINDER LBRACE
-		p1 = point COMMA
-		p2 = point COMMA
+		p1 = vector COMMA
+		p2 = vector COMMA
 		r = FLOAT
 	RBRACE
 		{ Cone (p1, r, p2, r) }
 	|
 	SPHERE LBRACE
-		c = point COMMA
+		c = vector COMMA
 		r = FLOAT
 	RBRACE
 		{ Sphere (c, r) }
@@ -78,7 +72,7 @@ primitive:
 		r1 = FLOAT COMMA
 		r2 = FLOAT
 	RBRACE
-		{ Box (r1, r2) }
+		{ Torus (r1, r2) }
 
 
 

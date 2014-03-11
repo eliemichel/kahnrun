@@ -31,7 +31,7 @@ let main filename =
 	
 	let pAst =
 		try
-			Parser.program Lexer.token buf
+			Parser.scene Lexer.token buf
 		with
 		| Lexer.Error err -> (
 			print_syntax_error ("Lexing error: " ^ err);

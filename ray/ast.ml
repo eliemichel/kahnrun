@@ -9,8 +9,8 @@ type length = float
 type vector = length * length * length
 
 type pigment =
-	| RGB of vect
-	| Spec of vect * float
+	| RGB of vector
+	| Spec of vector * float
 
 
 type primitive =
@@ -20,10 +20,10 @@ type primitive =
 	| Torus of (length * length) (* major, minor *)
 
 type combination =
-	| Union of obj * obj
-	| Difference of obj * obj
-	| Intersection of obj * obj
-	| Merge of obj * obj
+	| Union of obj list
+	| Difference of obj list
+	| Intersection of obj list
+	| Merge of obj list
 
 and obj =
 	| Combination of combination
