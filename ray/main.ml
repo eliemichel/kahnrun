@@ -27,7 +27,7 @@ let main filename =
 	let f = open_in filename in
 	let buf = Lexing.from_channel f in
 	let print_syntax_error = print_syntax_error filename buf in
-	let print_error = print_error filename in
+	(*let print_error = print_error filename in*)
 	
 	let pAst =
 		try
@@ -45,6 +45,7 @@ let main filename =
 		| _ -> exit 2
 	in
 	eprintf "Parsing done.@.";
+	ignore pAst;
 	exit 0
 
 let () = Arg.parse

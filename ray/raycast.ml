@@ -2,7 +2,7 @@
 open Ast
 
 
-type ray = vector * vector (* origin, direction *)
+type ray = vector * vector * float (* origin, direction, age *)
 (* Important note: We assume that the direction vector is always unitary *)
 
 let e0 = (1., 0., 0.)
@@ -25,7 +25,7 @@ let ( ** ) (x, y, z) alpha =
 let scal (xa, ya, za) (xb, yb, zb) =
 	xa *. xb +. ya *. yb +. za *. zb
 
-let (/\) (xa, ya, za) (xb, yb, zb) =
+let (^) (xa, ya, za) (xb, yb, zb) =
 	ya *. zb -. yb *. za,
 	za *. xb -. zb *. xa,
 	xa *. yb -. xb *. ya
@@ -39,10 +39,10 @@ let normalize v =
 
 let identity x = x
 
-let simetry_axis axis v =
+let symetry_axis axis v =
 	let axis = normalize axis in
 	let along = axis ** (scal axis v) in
-		along ** 2 -- v
+		along ** 2. -- v
 
 let interp_cos u v t =
 	(u ** t) ++ (v ** (1. -. t *. t))
@@ -50,30 +50,32 @@ let interp_cos u v t =
 let full_base v =
 	if v = e0 then e1, e2
 	else
-		let b1 = v /\ e0 in
-			b1, v /\ b1
+		let b1 = v ^ e0 in
+			b1, v ^ b1
 
-let intersection_ray_primitive (orig, dir) = function
+let intersection_ray_primitive (origin, dir, len) = function
 	| Box (c1, c2) -> assert false
 
 	| Cone (p1, r1, p2, r2) -> assert false
 
 	| Sphere (c, r) ->
 		let r2 = r *. r in
-		let toobj = c -- orig in
+		let toobj = c -- origin in
 		let rad = toobj -- dir ** (scal toobj dir) in
+		let hitPoint = c -- rad -- (dir ** (r2 -. norm2 rad)) in
+		let newlen = len +. norm (hitPoint -- origin) in
 			if norm2(rad) > r2
-			then fun _ -> (origin, dir), identity
+			then fun _ -> (origin, dir, newlen), identity
 			else
-				let hitPoint = c -- rad -- (dir ** (r2 - norm2 rad)) in
 				let newDir = symetry_axis (hitPoint -- c) dir  in
 					let b1, b2 = full_base newDir in
 					fun p ->
 						let p1 = p() in
-						let orthDir = interp_cos b1 b2 p() in
+						let orthDir = interp_cos b1 b2 (p ()) in
 						(
 							hitPoint,
-							interp_cos newDir orthDir p()
+							interp_cos newDir orthDir (p ()),
+							newlen
 						),
 						identity 
 
