@@ -1,8 +1,8 @@
-CMX=ast.cmx parser.cmx lexer.cmx main.cmx
+CMX=ast.cmx parser.cmx lexer.cmx raycast.cmx main.cmx
 GEN=lexer.ml parser.ml parser.mli
 BIN=ray
 LIBS=
-
+SOURCES=main.ml ast.ml lexer.mll parser.mly raycast.ml
 
 NO_COLOR=\033[0m
 OK_COLOR=\033[32;01m
@@ -13,6 +13,10 @@ HIGHLIGHT_COLOR=\033[1m
 all: $(BIN)
 	@echo "$(HIGHLIGHT_COLOR)  ./$(BIN) --help$(NO_COLOR)"
 	@./$(BIN) --help
+
+session:
+	@echo "Recovering session..."
+	@gedit $(SOURCES) 2>/dev/null &
 
 
 $(BIN): $(CMX)
@@ -48,9 +52,11 @@ clean:
 	rm -f .depend
 	ocamldep *.mli *.ml > .depend
 
-.PHONY: all clean
+.PHONY: all clean session
 
 ifneq ($(MAKECMDGOALS),clean)
+ifneq ($(MAKECMDGOALS),session)
 include .depend
+endif
 endif
 
