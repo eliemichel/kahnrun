@@ -73,6 +73,13 @@ primitive:
 		r2 = FLOAT
 	RBRACE
 		{ Torus (r1, r2) }
+	|
+	TRIANGLE LBRACE
+		p1 = vector COMMA
+		p2 = vector COMMA
+		p3 = vector
+	RBRACE
+		{ Triangle (p1, p2, p3) }
 
 
 

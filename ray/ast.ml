@@ -18,6 +18,7 @@ type primitive =
 	| Cone of (vector * length * vector * length) (* base point, base radius, cap point, cap radius *)
 	| Sphere of (vector * length) (* center, radius *)
 	| Torus of (length * length) (* major, minor *)
+	| Triangle of (vector * vector * vector) (* point 1, point 2, point 3 *)
 
 type combination =
 	| Union of obj list
@@ -32,4 +33,9 @@ and obj =
 type decl = obj * pigment list
 
 type pAst = decl list
+
+
+
+
+
 

@@ -11,6 +11,7 @@
 		"cylinder",     CYLINDER;
 		"sphere",       SPHERE;
 		"torus",        TORUS;
+		"triangle",     TRIANGLE;
 		
 		"union",        UNION;
 		"intersection", INTERSECTION;
