@@ -88,3 +88,66 @@ module Th: S = struct
   let run e = e ()
 end
 
+
+
+module Mono: S = struct
+	let q : (unit -> unit) Queue.t = Queue.create ()
+	exception Delay (* Pour repporter un processus si une fifo est vide *)
+	
+	type 'a process = ('a -> unit) -> unit
+
+	type 'a channel = 'a Queue.t
+	type 'a in_port = 'a channel
+	type 'a out_port = 'a channel
+
+	let new_channel () =
+		let c = Queue.create () in
+			c, c
+	
+	let put a c cb =
+		Queue.push a c;
+		cb ()
+	
+	let rec get c cb =
+		try cb (Queue.pop c)
+		with Queue.Empty ->
+			Queue.push (fun () -> get c cb) q (* On procrastine… *)
+	
+	let doco l =
+		(* À cause de `get` on ne peut se contenter d'ajouter `cb` à `q`
+			après les éléments de `l` *)
+		let n = List.length l in
+		fun cb ->
+			let k = ref 0 in
+			let aux () =
+				incr k;
+				if !k = n (* Si tous les processi de la liste ont été exécuté *)
+				then cb ()
+			in
+			List.iter (fun p -> Queue.push (fun () -> p aux) q) l
+	
+	
+	let return a =
+		fun cb -> Queue.push (fun () -> cb a) q
+
+	let bind p f =
+			fun cb ->
+				let e () = p (fun a -> f a cb) in
+					Queue.push e q
+
+	let run p =
+		let r = ref None in
+		let cb = fun a -> r := Some a in
+		let e () = p cb in
+			Queue.push e q;
+			while not (Queue.is_empty q) do
+				Queue.pop q ()
+			done;
+			match !r with
+				| None -> assert false
+				| Some a -> a
+end
+
+
+
+

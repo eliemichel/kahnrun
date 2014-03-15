@@ -11,7 +11,7 @@ module Example (K : Kahn.S) = struct
 
   let output (qi : int K.in_port) : unit K.process =
     let rec loop () =
-      (K.get qi) >>= (fun v -> Format.printf "%d@." v; loop ())
+      (K.get qi) >>= (fun v -> if v = 1000000 then ignore(1/0) else Format.printf "%d@." v; loop ())
     in
     loop ()
 
@@ -21,6 +21,6 @@ module Example (K : Kahn.S) = struct
 
 end
 
-module E = Example(Kahn.Th)
+module E = Example(Kahn.Mono)
 
 let () = E.K.run E.main
