@@ -5,6 +5,7 @@ exception Error of string
 
 type ray = vector * vector * float (* origin, direction, age *)
 
+let infty = max_float
 
 let e0 = (1., 0., 0.)
 let e1 = (0., 1., 0.)
@@ -51,8 +52,8 @@ let interp_cos u v t =
 let full_base v =
 	if v = e2 then e0, e1
 	else
-		let b1 = v ^ e2 in
-			b1, v ^ b1
+		let b1 = normalize (v ^ e2) in
+			b1, normalize (v ^ b1)
 
 let debug_vect s (x, y, z) = Format.printf "%s = (%f, %f, %f)@." s x y z
 
@@ -70,7 +71,7 @@ let intersection_ray_primitive (origin, dir, len) =
 		let hitPoint = c -- rad -- (dir ** (r2 -. norm2 rad)) in
 		let newlen = len +. norm (hitPoint -- origin) in
 			if norm2(rad) > r2
-			then fun _ -> (origin, dir, 1.), identity
+			then fun _ -> (origin, dir, infty), identity, 0.
 			else
 				let newDir = symetry_axis (hitPoint -- c) dir  in
 					let b1, b2 = full_base newDir in
@@ -81,7 +82,27 @@ let intersection_ray_primitive (origin, dir, len) =
 							interp_cos newDir orthDir (p ()),
 							newlen
 						),
-						identity 
+						identity,
+						(
+						0.2
+						+.
+						(sqrt (
+						abs_float (
+							scal
+								(normalize (hitPoint -- c))
+								(normalize (newDir))
+						))
+						) *. 0.9
+						+.
+						(
+							let x = scal
+								(normalize (-1., -1., -1.))
+								(normalize newDir)
+							in
+							let x = max 0. x in
+								exp (5. *. (log (x *. x)))
+						)
+						) /. 2.1 *. 255.
 
 	| Torus (r1, r2) -> assert false
 
@@ -118,31 +139,37 @@ let save_bmp filename buff =
 		done;
 		close_out f
 
+
 let render scene =
+	let w, h = 800, 800 in
+	let alpha = 4. /. (float_of_int w) in
 	let campos, camla = find_cam scene in
 	let camdir = normalize (campos-- camla) ** 10. in
-	let w, h = 800, 600 in
 	let cast prim x y =
 		let b1, b2 = full_base camdir in
 		let diff =
-			b1 ** ((float_of_int x) /. (float_of_int w)) ++
-			b2 ** ((float_of_int y) /. (float_of_int h))
+			b1 ** ((float_of_int (x - w / 2)) *. alpha) ++
+			b2 ** ((float_of_int (y - h / 2)) *. alpha)
 		in
 
-		let (hitpos, color, len), f =
+		let (hitpos, newray, len), f, color =
 			intersection_ray_primitive
 				(campos, camdir ++ diff, 0.)
 				prim
 				(fun () -> 0.5)
 		in
-			len
+			color, len
 	in		
 	let aux x y =
-		let iter a = function
-			| Object (Primitive p, _) -> a +. (cast p x y)
-			| _ -> a
+		let iter (a, d) = function
+			| Object (Primitive p, _) ->
+				let a', d' = cast p x y in
+					if d' < d
+					then a', d'
+					else a, d
+			| _ -> (a, d)
 		in
-			int_of_float (List.fold_left iter 0. scene *. 10.)
+			int_of_float (fst (List.fold_left iter (0., infty) scene))
 	in
 		save_bmp "test.bmp" (Array.init w (fun x -> Array.init h (aux x)))
 
