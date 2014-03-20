@@ -17,6 +17,8 @@
 		"intersection", INTERSECTION;
 		"difference",   DIFFERENCE;
 		"merge",        MERGE;
+		
+		"camera",       CAMERA;
 	]
 	
 	
@@ -70,12 +72,13 @@ let ident = (alpha | '_')(alpha | chiffre | '_')*
 
 let chiffre_octal = ['0'-'7']
 let chiffre_hexa = ['0'-'9' 'a'-'f' 'A'-'F']
-let flottant =
+let flottant_positif =
 	  '.' chiffre*
 	| '0' ('.' chiffre*)?
 	| ['1'-'9'] chiffre* ('.' chiffre*)?
 	| '0' chiffre_octal+
 	| "0x" chiffre_hexa+
+let flottant = '-'? flottant_positif
 
 let whitespace = [' ' '\t']+
 let commentaire_simple = "//" [^'\n']* '\n'
@@ -89,7 +92,7 @@ rule token = parse
 	| '}'    { RBRACE }
 	| ','    { COMMA }
 	| '<'    { LCHEVRON }
-	| '<'    { LCHEVRON }
+	| '>'    { RCHEVRON }
 	| "/*"   { comment lexbuf }
 	| commentaire_simple { newline lexbuf ; token lexbuf }
 	| eof    { EOF }

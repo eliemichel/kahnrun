@@ -45,7 +45,7 @@ let main filename =
 		| _ -> exit 2
 	in
 	eprintf "Parsing done.@.";
-	ignore pAst;
+	Raycast.render pAst;
 	exit 0
 
 let () = Arg.parse

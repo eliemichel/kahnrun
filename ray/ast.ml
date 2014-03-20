@@ -10,7 +10,7 @@ type vector = length * length * length
 
 type pigment =
 	| RGB of vector
-	| Spec of vector * float
+	| Spec of (vector * float)
 
 
 type primitive =
@@ -30,9 +30,12 @@ and obj =
 	| Combination of combination
 	| Primitive of primitive
 
-type decl = obj * pigment list
 
-type pAst = decl list
+type decl =
+	| Object of (obj * pigment list)
+	| Camera of (vector * vector)
+
+type scene = decl list
 
 
 

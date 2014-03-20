@@ -4,12 +4,13 @@
 
 %token BOX CONE CYLINDER SPHERE TORUS TRIANGLE
 %token UNION INTERSECTION DIFFERENCE MERGE
+%token CAMERA
 %token LBRACE RBRACE LCHEVRON RCHEVRON
 %token COMMA EOF
 
 %token <float> FLOAT
 
-%start <Ast.pAst> scene
+%start <Ast.scene> scene
 
 %%
 
@@ -21,7 +22,8 @@ scene:
 
 
 decl:
-	o = obj { (o, []) } (* Ajouter les pigments *)
+	| o = obj    { Object (o, []) } (* Ajouter les pigments *)
+	| c = camera { c              }
 
 obj:
 	| c = combination { Combination c }
@@ -82,6 +84,12 @@ primitive:
 		{ Triangle (p1, p2, p3) }
 
 
+camera:
+	CAMERA LBRACE
+		pos = vector COMMA
+		lookat = vector
+	RBRACE
+		{ Camera (pos, lookat) }
 
 
 

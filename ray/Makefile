@@ -52,11 +52,15 @@ clean:
 	rm -f .depend
 	ocamldep *.mli *.ml > .depend
 
-.PHONY: all clean session
+dep: all
+
+.PHONY: all clean session dep
 
 ifneq ($(MAKECMDGOALS),clean)
 ifneq ($(MAKECMDGOALS),session)
+ifeq ($(MAKECMDGOALS),dep)
 include .depend
+endif
 endif
 endif
 
