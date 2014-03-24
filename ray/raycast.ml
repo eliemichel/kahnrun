@@ -3,14 +3,51 @@ open Ast
 
 exception Error of string
 
-type ray = vector * vector * float (* origin, direction, age *)
+type ray = vector * vector (* origin, direction *)
+(* ray direction should always be unitary *)
+
+type color = float * float * float
 
 let infty = max_float
 
+
+
+
+let save_bmp filename buff =
+	(**
+		`save_bmp filename buff`
+		saves the raw image contained in `buff` as a matrix of 24bit integers
+		in the file named `filename` under Windows Bitmap Format.
+	*)
+	let w, h = Array.length buff, Array.length buff.(0) in
+	let f = open_out filename in
+	let rec write n = function
+		| 0 -> ()
+		| s -> output_byte f (n mod 256); write (n lsr 8) (s - 1)
+	in
+		output_char f 'B';
+		output_char f 'M';
+		write (w * h * 3 + 26) 8;
+		write 26 4;
+		write 12 4;
+		write w 2;
+		write h 2;
+		write 1 2;
+		write 24 2;
+		for j = 0 to h - 1 do
+			for i = 0 to w - 1 do
+				write buff.(i).(j) 3
+			done
+		done;
+		close_out f
+
+
+(* Canonical R^3 base *)
 let e0 = (1., 0., 0.)
 let e1 = (0., 1., 0.)
 let e2 = (0., 0., 1.)
 
+(* Common operations on 3d vectors *)
 let (++) (xa, ya, za) (xb, yb, zb) =
 	(xa +. xb, ya +. yb, za +. zb)
 
@@ -49,7 +86,7 @@ let symetry_axis axis v =
 let interp_cos u v t =
 	(u ** t) ++ (v ** (1. -. t *. t))
 
-let full_base v =
+let complete_base v =
 	if v = e2 then e0, e1
 	else
 		let b1 = normalize (v ^ e2) in
@@ -57,7 +94,13 @@ let full_base v =
 
 let debug_vect s (x, y, z) = Format.printf "%s = (%f, %f, %f)@." s x y z
 
-let intersection_ray_primitive (origin, dir, len) =
+
+let collision_primitive (origin, dir) =
+	(**
+		`collision_primitive ray primitive`
+		computes the first intersection between a ray and a primitive mesh.
+		returns an optionnal hit point, normale couple.
+	*)
 	let dir = normalize dir in
 	function
 	| Box (c1, c2) -> assert false
@@ -68,45 +111,38 @@ let intersection_ray_primitive (origin, dir, len) =
 		let r2 = r *. r in
 		let toobj = c -- origin in
 		let rad = toobj -- (dir ** (scal toobj dir)) in
-		let hitPoint = c -- rad -- (dir ** (r2 -. norm2 rad)) in
-		let newlen = len +. norm (hitPoint -- origin) in
 			if norm2(rad) > r2
-			then fun _ -> (origin, dir, infty), identity, 0.
+			then None
 			else
-				let newDir = symetry_axis (hitPoint -- c) dir  in
-					let b1, b2 = full_base newDir in
-					fun p ->
-						let orthDir = interp_cos b1 b2 (p ()) in
-						(
-							hitPoint,
-							interp_cos newDir orthDir (p ()),
-							newlen
-						),
-						identity,
-						(
-						0.2
-						+.
-						(sqrt (
-						abs_float (
-							scal
-								(normalize (hitPoint -- c))
-								(normalize (newDir))
-						))
-						) *. 0.9
-						+.
-						(
-							let x = scal
-								(normalize (-1., -1., -1.))
-								(normalize newDir)
-							in
-							let x = max 0. x in
-								exp (5. *. (log (x *. x)))
-						)
-						) /. 2.1 *. 255.
+				let hitPoint = c -- rad -- (dir ** (r2 -. norm2 rad)) in
+				let normale = normalize (hitPoint -- c) in
+					Some (hitPoint, normale)
 
 	| Torus (r1, r2) -> assert false
 
 	| Triangle (p1, p2, p3) -> assert false
+
+
+let rec collision_scene ray = function
+	(**
+		`collision_scene ray scene`
+		computes the first intersection of between ray and a scene.
+		returns an optionnal hit point, normale couple.
+	*)
+	| [] -> None
+	| (Object (Primitive p, m)) :: q -> (
+		match collision_primitive ray p, collision_scene ray q with
+			| None, None -> None
+			| Some (hp, n), None -> Some (hp, n, m)
+			| None, Some r -> Some r
+			| Some (hp, n), Some (hp', n', m') -> (* On voit l'objet le plus proche *)
+				let o = fst ray in
+					if norm2 (o -- hp) < norm2 (o -- hp')
+					then Some (hp, n, m)
+					else Some (hp', n', m')
+		)
+	| _ :: q -> collision_scene ray q
+
 
 
 let rec find_cam = function
@@ -116,62 +152,87 @@ let rec find_cam = function
 
 
 
-let save_bmp filename buff =
-	let w, h = Array.length buff, Array.length buff.(0) in
-	let f = open_out filename in
-	let rec write n = function
-		| 0 -> ()
-		| s -> output_byte f (n mod 256); write (n lsr 8) (s - 1)
+let diffuse color alpha (origin, dir) hitPoint normale =
+	let t = sqrt (abs_float (scal dir normale)) in
+		color ** (t *. alpha)
+
+let ambiant color alpha (origin, dir) hitPoint normale =
+	color ** alpha
+
+let specular color lightDir alpha (origin, dir) hitPoint normale =
+	let lightDir = normalize lightDir in
+	let x = max (-. scal lightDir normale) 0. in
+	let t = exp (5. *. (log (x *. x))) in
+		color ** (t *. alpha)
+
+
+(* to be inserted into scene object *)
+let w, h = 800, 800
+let background_color = 0., 0., 0.
+let mat = [
+	specular (1., 1., 1.) (-1., -1., -1.) (1. /. 2.1);
+	diffuse (0., 0., 1.) (0.9 /. 2.1);
+	ambiant (0., 0., 1.) (0.2 /. 2.1)
+]
+
+let render_ray scene ray =
+	(**
+		`render_ray scene ray`
+		renders the color of a given ray.
+		returns a color.
+	*)
+	match collision_scene ray scene with
+		| None -> background_color
+		| Some (hitPoint, normale, material) ->
+			let material = mat in
+			List.fold_left
+				(fun c f -> c ++ f ray hitPoint normale)
+				(0., 0., 0.)
+				material
+
+
+let int_of_color (r, g, b) =
+	(**
+		`color_to_int color`
+		converts color from rgb float format to 24bit int.
+		returns an int.
+	*)
+	let aux c =
+		let x = int_of_float (c *. 255.) in
+			min 255 (max 0 x)
 	in
-		output_char f 'B';
-		output_char f 'M';
-		write (w * h * 3 + 26) 8;
-		write 26 4;
-		write 12 4;
-		write w 2;
-		write h 2;
-		write 1 2;
-		write 24 2;
-		for j = 0 to h - 1 do
-			for i = 0 to w - 1 do
-				write buff.(i).(j) 3
-			done
-		done;
-		close_out f
+		((aux r) * 256 + (aux g)) * 256 + (aux b)
+
+
+let render_pixel scene x y =
+	(**
+		`render_pixel scene x y`
+		renders the color of a given pixel.
+		returns a color.
+	*)
+	let alpha = 0.4 /. (float_of_int w) in
+	let campos, camlookat = find_cam scene in
+	let camdir = normalize (campos -- camlookat) in
+	let b1, b2 = complete_base camdir in
+	let diff =
+		b1 ** ((float_of_int (x - w / 2)) *. alpha) ++
+		b2 ** ((float_of_int (y - h / 2)) *. alpha)
+	in
+		int_of_color (render_ray scene (campos, camdir ++ diff))
+
+
 
 
 let render scene =
-	let w, h = 800, 800 in
-	let alpha = 4. /. (float_of_int w) in
-	let campos, camla = find_cam scene in
-	let camdir = normalize (campos-- camla) ** 10. in
-	let cast prim x y =
-		let b1, b2 = full_base camdir in
-		let diff =
-			b1 ** ((float_of_int (x - w / 2)) *. alpha) ++
-			b2 ** ((float_of_int (y - h / 2)) *. alpha)
-		in
+	(**
+		`render scene`
+		is the main function of that module. It renders a scene and saves it
+		into "test.bmp".
+	*)		
+	save_bmp
+		"test.bmp"
+		(Array.init w (fun x -> Array.init h (render_pixel scene x)))
 
-		let (hitpos, newray, len), f, color =
-			intersection_ray_primitive
-				(campos, camdir ++ diff, 0.)
-				prim
-				(fun () -> 0.5)
-		in
-			color, len
-	in		
-	let aux x y =
-		let iter (a, d) = function
-			| Object (Primitive p, _) ->
-				let a', d' = cast p x y in
-					if d' < d
-					then a', d'
-					else a, d
-			| _ -> (a, d)
-		in
-			int_of_float (fst (List.fold_left iter (0., infty) scene))
-	in
-		save_bmp "test.bmp" (Array.init w (fun x -> Array.init h (aux x)))
 
 
 
