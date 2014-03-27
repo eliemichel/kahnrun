@@ -10,7 +10,7 @@
 
 %token <float> FLOAT
 
-%start <Ast.scene> scene
+%start <Ast.decl list> scene
 
 %%
 

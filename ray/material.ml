@@ -20,7 +20,8 @@
 
 open Vecutils
 
-type shader = float -> ray -> vector -> vector -> color
+type shader = ray -> vector -> vector -> color
+type material = shader list
 
 let diffuse color alpha ((origin, dir) : ray) (hitPoint : vector) normale =
 	let t = sqrt (abs_float (scal dir normale)) in

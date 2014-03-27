@@ -1,4 +1,7 @@
-
+(*
+	Vecutils définit quelques fonctions de manipulation de vecteurs
+	tridimensionnels.
+*)
 
 type length = float
 type vector = length * length * length

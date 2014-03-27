@@ -78,7 +78,9 @@ let main filename =
 		| _ -> exit 2
 	in
 	eprintf "Parsing done.@.";
-	save_bmp "test.bmp" (Raycast.render pAst);
+	let scene = Typer.process pAst in
+	eprintf "Typing done.@.";
+	save_bmp "test.bmp" (Raycast.render scene);
 	exit 0
 
 let () = Arg.parse

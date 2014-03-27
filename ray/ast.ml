@@ -1,5 +1,6 @@
 
 open Vecutils
+open Material
 
 (* ------ Parsed AST ------ *)
 
@@ -34,9 +35,13 @@ type decl =
 	| Object of (obj * pigment list)
 	| Camera of (vector * vector)
 
-type scene = decl list
-
-
+type scene = {
+	objects : (obj * material) list;
+	camera : vector * vector;
+	background_color : color;
+	output_size : int * int;
+	ratio : float
+}
 
 
 

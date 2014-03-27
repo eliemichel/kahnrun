@@ -1,3 +1,8 @@
+(*
+	Raycast est le cœur du moteur de rendu. Il définit les procédures de
+	calcul de collision entre rayons et objets et décompose les différentes
+	étapes du rendu (rendu par pixel, par rayon, etc).
+*)
 
 open Ast
 open Vecutils
@@ -43,7 +48,7 @@ let rec collision_scene ray = function
 		returns an optionnal hit point, normale couple.
 	*)
 	| [] -> None
-	| (Object (Primitive p, m)) :: q -> (
+	| (Primitive p, m) :: q -> (
 		match collision_primitive ray p, collision_scene ray q with
 			| None, None -> None
 			| Some (hp, n), None -> Some (hp, n, m)
@@ -56,29 +61,16 @@ let rec collision_scene ray = function
 		)
 	| _ :: q -> collision_scene ray q
 
-
-
-let rec find_cam = function
-		| [] -> raise (Error "Camera not found")
-		| (Camera c) :: _ -> c
-		| _ :: q -> find_cam q
-
-
-(* to be inserted into scene object *)
-let w, h = 800, 800
-let background_color = 0., 0., 0.
-
-
 let render_ray scene ray =
 	(**
 		`render_ray scene ray`
 		renders the color of a given ray.
 		returns a color.
 	*)
-	match collision_scene ray scene with
-		| None -> background_color
+	match collision_scene ray scene.objects with
+		| None -> scene.background_color
 		| Some (hitPoint, normale, material) ->
-			Material.render Material.example ray hitPoint normale
+			Material.render material ray hitPoint normale
 
 
 let int_of_color (r, g, b) =
@@ -100,8 +92,9 @@ let render_pixel scene x y =
 		renders the color of a given pixel.
 		returns a color.
 	*)
-	let alpha = 0.4 /. (float_of_int w) in
-	let campos, camlookat = find_cam scene in
+	let w, h = scene.output_size in
+	let alpha = scene.ratio /. (float_of_int w) in
+	let campos, camlookat = scene.camera in
 	let camdir = normalize (campos -- camlookat) in
 	let b1, b2 = complete_base camdir in
 	let diff =
@@ -118,8 +111,9 @@ let render scene =
 		`render scene`
 		is the main function of that module. It renders a scene and saves it
 		into a matrix.
-	*)		
-	Array.init w (fun x -> Array.init h (render_pixel scene x))
+	*)
+	let w, h = scene.output_size in
+		Array.init w (fun x -> Array.init h (render_pixel scene x))
 
 
 
