@@ -78,11 +78,7 @@ let render_ray scene ray =
 	match collision_scene ray scene with
 		| None -> background_color
 		| Some (hitPoint, normale, material) ->
-			let material = Material.example in
-			List.fold_left
-				(fun c f -> c ++ f ray hitPoint normale)
-				(0., 0., 0.)
-				material
+			Material.render Material.example ray hitPoint normale
 
 
 let int_of_color (r, g, b) =

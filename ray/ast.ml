@@ -1,4 +1,6 @@
 
+open Vecutils
+
 (* ------ Parsed AST ------ *)
 
 type position = Lexing.position * Lexing.position
