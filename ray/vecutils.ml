@@ -1,5 +1,15 @@
 
 
+type length = float
+type vector = length * length * length
+
+
+type ray = vector * vector (* origin, direction *)
+(* ray direction should always be unitary *)
+
+type color = float * float * float
+
+
 (* Canonical R^3 base *)
 let e0 = (1., 0., 0.)
 let e1 = (0., 1., 0.)

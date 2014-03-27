@@ -4,11 +4,6 @@ open Vecutils
 
 exception Error of string
 
-type ray = vector * vector (* origin, direction *)
-(* ray direction should always be unitary *)
-
-type color = float * float * float
-
 let infty = max_float
 
 
@@ -72,11 +67,7 @@ let rec find_cam = function
 (* to be inserted into scene object *)
 let w, h = 800, 800
 let background_color = 0., 0., 0.
-let mat = [
-	Material.specular (1., 1., 1.) (-1., -1., -1.) (1. /. 2.1);
-	Material.diffuse (0., 0., 1.) (0.9 /. 2.1);
-	Material.ambiant (0., 0., 1.) (0.2 /. 2.1)
-]
+
 
 let render_ray scene ray =
 	(**
@@ -87,7 +78,7 @@ let render_ray scene ray =
 	match collision_scene ray scene with
 		| None -> background_color
 		| Some (hitPoint, normale, material) ->
-			let material = mat in
+			let material = Material.example in
 			List.fold_left
 				(fun c f -> c ++ f ray hitPoint normale)
 				(0., 0., 0.)

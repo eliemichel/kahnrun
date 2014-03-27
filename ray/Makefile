@@ -2,7 +2,7 @@ CMX=vecutils.cmx material.cmx ast.cmx parser.cmx lexer.cmx raycast.cmx main.cmx
 GEN=lexer.ml parser.ml parser.mli
 BIN=ray
 LIBS=
-SOURCES=main.ml ast.ml lexer.mll parser.mly raycast.ml
+SOURCES=main.ml vecutils.ml material.ml ast.ml lexer.mll parser.mly raycast.ml
 
 NO_COLOR=\033[0m
 OK_COLOR=\033[32;01m

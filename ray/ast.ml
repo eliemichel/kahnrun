@@ -5,9 +5,6 @@ type position = Lexing.position * Lexing.position
 
 type 'a pos_node = 'a * position
 
-type length = float
-type vector = length * length * length
-
 type pigment =
 	| RGB of vector
 	| Spec of (vector * float)
