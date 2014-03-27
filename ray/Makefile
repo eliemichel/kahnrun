@@ -1,4 +1,4 @@
-CMX=ast.cmx parser.cmx lexer.cmx raycast.cmx main.cmx
+CMX=vecutils.cmx material.cmx ast.cmx parser.cmx lexer.cmx raycast.cmx main.cmx
 GEN=lexer.ml parser.ml parser.mli
 BIN=ray
 LIBS=

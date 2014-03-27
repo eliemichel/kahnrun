@@ -1,5 +1,38 @@
 open Format
 
+
+
+let save_bmp filename buff =
+	(**
+		`save_bmp filename buff`
+		saves the raw image contained in `buff` as a matrix of 24bit integers
+		in the file named `filename` under Windows Bitmap Format.
+	*)
+	let w, h = Array.length buff, Array.length buff.(0) in
+	let f = open_out filename in
+	let rec write n = function
+		| 0 -> ()
+		| s -> output_byte f (n mod 256); write (n lsr 8) (s - 1)
+	in
+		output_char f 'B';
+		output_char f 'M';
+		write (w * h * 3 + 26) 8;
+		write 26 4;
+		write 12 4;
+		write w 2;
+		write h 2;
+		write 1 2;
+		write 24 2;
+		for j = 0 to h - 1 do
+			for i = 0 to w - 1 do
+				write buff.(i).(j) 3
+			done
+		done;
+		close_out f
+
+
+
+
 let get_pos start_pos end_pos =
 	end_pos.Lexing.pos_lnum,
 	start_pos.Lexing.pos_cnum - start_pos.Lexing.pos_bol,
@@ -45,7 +78,7 @@ let main filename =
 		| _ -> exit 2
 	in
 	eprintf "Parsing done.@.";
-	Raycast.render pAst;
+	save_bmp "test.bmp" (Raycast.render pAst);
 	exit 0
 
 let () = Arg.parse

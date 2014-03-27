@@ -1,5 +1,6 @@
 
 open Ast
+open Vecutils
 
 exception Error of string
 
@@ -10,89 +11,6 @@ type color = float * float * float
 
 let infty = max_float
 
-
-
-
-let save_bmp filename buff =
-	(**
-		`save_bmp filename buff`
-		saves the raw image contained in `buff` as a matrix of 24bit integers
-		in the file named `filename` under Windows Bitmap Format.
-	*)
-	let w, h = Array.length buff, Array.length buff.(0) in
-	let f = open_out filename in
-	let rec write n = function
-		| 0 -> ()
-		| s -> output_byte f (n mod 256); write (n lsr 8) (s - 1)
-	in
-		output_char f 'B';
-		output_char f 'M';
-		write (w * h * 3 + 26) 8;
-		write 26 4;
-		write 12 4;
-		write w 2;
-		write h 2;
-		write 1 2;
-		write 24 2;
-		for j = 0 to h - 1 do
-			for i = 0 to w - 1 do
-				write buff.(i).(j) 3
-			done
-		done;
-		close_out f
-
-
-(* Canonical R^3 base *)
-let e0 = (1., 0., 0.)
-let e1 = (0., 1., 0.)
-let e2 = (0., 0., 1.)
-
-(* Common operations on 3d vectors *)
-let (++) (xa, ya, za) (xb, yb, zb) =
-	(xa +. xb, ya +. yb, za +. zb)
-
-let (--) (xa, ya, za) (xb, yb, zb) =
-	(xa -. xb, ya -. yb, za -. zb)
-
-let (//) (x, y, z) alpha =
-	(x /. alpha, y /. alpha, z /. alpha)
-
-let ( ** ) (x, y, z) alpha =
-	(alpha *. x, alpha *. y, alpha *. z)
-
-
-let scal (xa, ya, za) (xb, yb, zb) =
-	xa *. xb +. ya *. yb +. za *. zb
-
-let (^) (xa, ya, za) (xb, yb, zb) =
-	ya *. zb -. yb *. za,
-	za *. xb -. zb *. xa,
-	xa *. yb -. xb *. ya
-
-
-let norm2 v = scal v v
-let norm  v = sqrt (norm2 v)
-
-let normalize v =
-	v // (norm v)
-
-let identity x = x
-
-let symetry_axis axis v =
-	let axis = normalize axis in
-	let along = axis ** (scal axis v) in
-		along ** 2. -- v
-
-let interp_cos u v t =
-	(u ** t) ++ (v ** (1. -. t *. t))
-
-let complete_base v =
-	if v = e2 then e0, e1
-	else
-		let b1 = normalize (v ^ e2) in
-			b1, normalize (v ^ b1)
-
-let debug_vect s (x, y, z) = Format.printf "%s = (%f, %f, %f)@." s x y z
 
 
 let collision_primitive (origin, dir) =
@@ -151,28 +69,13 @@ let rec find_cam = function
 		| _ :: q -> find_cam q
 
 
-
-let diffuse color alpha (origin, dir) hitPoint normale =
-	let t = sqrt (abs_float (scal dir normale)) in
-		color ** (t *. alpha)
-
-let ambiant color alpha (origin, dir) hitPoint normale =
-	color ** alpha
-
-let specular color lightDir alpha (origin, dir) hitPoint normale =
-	let lightDir = normalize lightDir in
-	let x = max (-. scal lightDir normale) 0. in
-	let t = exp (5. *. (log (x *. x))) in
-		color ** (t *. alpha)
-
-
 (* to be inserted into scene object *)
 let w, h = 800, 800
 let background_color = 0., 0., 0.
 let mat = [
-	specular (1., 1., 1.) (-1., -1., -1.) (1. /. 2.1);
-	diffuse (0., 0., 1.) (0.9 /. 2.1);
-	ambiant (0., 0., 1.) (0.2 /. 2.1)
+	Material.specular (1., 1., 1.) (-1., -1., -1.) (1. /. 2.1);
+	Material.diffuse (0., 0., 1.) (0.9 /. 2.1);
+	Material.ambiant (0., 0., 1.) (0.2 /. 2.1)
 ]
 
 let render_ray scene ray =
@@ -227,11 +130,9 @@ let render scene =
 	(**
 		`render scene`
 		is the main function of that module. It renders a scene and saves it
-		into "test.bmp".
+		into a matrix.
 	*)		
-	save_bmp
-		"test.bmp"
-		(Array.init w (fun x -> Array.init h (render_pixel scene x)))
+	Array.init w (fun x -> Array.init h (render_pixel scene x))
 
 
 
