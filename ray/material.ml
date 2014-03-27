@@ -37,8 +37,8 @@ let specular color lightDir alpha (origin, dir) hitPoint normale =
 		color ** (t *. alpha)
 
 let example = [
-	specular (1., 1., 1.) (-1., -1., -1.) (1. /. 2.1);
-	diffuse (0., 0., 1.) (0.9 /. 2.1);
+	specular (1., 0.6, 0.6) (-1., -1., -1.) (1. /. 2.1);
+	diffuse (1., 1., 0.5) (0.9 /. 2.1);
 	ambiant (0., 0., 1.) (0.2 /. 2.1)
 ]
 

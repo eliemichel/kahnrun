@@ -38,7 +38,21 @@ let collision_primitive (origin, dir) =
 
 	| Torus (r1, r2) -> assert false
 
-	| Triangle (p1, p2, p3) -> assert false
+	| Triangle (p1, p2, p3) ->
+		let v1 = p2 -- p1 in
+		let v2 = p3 -- p1 in
+		match solve33 (v1, v2, dir) (origin -- p1) with
+			| None -> None
+			| Some (alpha, beta, gamma) ->
+				if
+					alpha < 0. || alpha > 1.
+					|| beta < 0. || beta > 1.
+					|| gamma > 0.
+				then None
+				else
+					let hitPoint = origin -- (dir ** gamma) in
+					let normale = normalize (v1 ^ v2) in
+						Some (hitPoint, normale)
 
 
 let rec collision_scene ray = function
@@ -93,16 +107,20 @@ let render_pixel scene x y =
 		returns a color.
 	*)
 	let w, h = scene.output_size in
-	let alpha = scene.ratio /. (float_of_int w) in
+	let alpha = scene.ratio /. (float_of_int w) /. 2. in
 	let campos, camlookat = scene.camera in
 	let camdir = normalize (campos -- camlookat) in
 	let b1, b2 = complete_base camdir in
-	let diff =
-		b1 ** ((float_of_int (x - w / 2)) *. alpha) ++
-		b2 ** ((float_of_int (y - h / 2)) *. alpha)
+	let diff i j =
+		b1 ** ((float_of_int (2 * x + i - w)) *. alpha) ++
+		b2 ** ((float_of_int (2 * y + j - h)) *. alpha)
 	in
-		int_of_color (render_ray scene (campos, camdir ++ diff))
-
+		int_of_color ((
+			(render_ray scene (campos, camdir ++ (diff 0 0))) ++
+			(render_ray scene (campos, camdir ++ (diff 0 1))) ++
+			(render_ray scene (campos, camdir ++ (diff 1 0))) ++
+			(render_ray scene (campos, camdir ++ (diff 1 1)))
+		) // 4.)
 
 
 

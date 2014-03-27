@@ -30,7 +30,7 @@ let process ast =
 		)
 	in
 	let camera = find_cam ast in
-	let background_color = 0., 0., 0. in
+	let background_color = 0.85, 0.8, 1. in
 	let output_size = 800, 600 in
 	let ratio = 0.4 in
 	{

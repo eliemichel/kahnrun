@@ -66,4 +66,22 @@ let complete_base v =
 let debug_vect s (x, y, z) = Format.printf "%s = (%f, %f, %f)@." s x y z
 
 
+let det2 a b c d = a *. c -. b *. d
+
+let det3 ((a00, a10, a20), (a01, a11, a21), (a02, a12, a22)) =
+	a00 *. a11 *. a22 +. a01 *. a12 *. a20 +. a10 *. a21 *. a02
+	-. a02 *. a22 *. a20 -. a01 *. a10 *. a22 -. a12 *. a21 *. a00
+
+let solve33 ((c0, c1, c2) as m) x =
+
+	let det = det3 m in
+	if det = 0.
+	then None
+	else
+		let a = det3 (x, c1, c2) in
+		let b = det3 (c0, x, c2) in
+		let c = det3 (c0, c1, x) in
+			Some ((a, b, c) // det)
+
+
 
