@@ -19,6 +19,8 @@ type primitive =
 	| Sphere of (vector * length) (* center, radius *)
 	| Torus of (length * length) (* major, minor *)
 	| Triangle of (vector * vector * vector) (* point 1, point 2, point 3 *)
+	| Smooth_triangle of (vector * vector * vector * vector * vector * vector)
+		(* point 1, normale 1, point 2, normale 2, point 3, normale 3 *)
 
 type combination =
 	| Union of obj list

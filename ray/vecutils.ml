@@ -57,20 +57,32 @@ let symetry_axis axis v =
 let interp_cos u v t =
 	(u ** t) ++ (v ** (1. -. t *. t))
 
-let complete_base v =
-	if v = e2 then e0, e1
+let complete_base z =
+	(**
+		`complete_base Z`
+		computes vectors X and Y such as (X, Y, Z) is an orthonormal base and
+		Y is as similar as global Z (e2) as possible.
+		returns (X, Y).
+	*)
+	if z = e2 then e0, e1
 	else
-		let b1 = normalize (v ^ e2) in
-			b1, normalize (v ^ b1)
+		let b1 = normalize (e2 ^ z) in
+			b1, normalize (z ^ b1)
 
 let debug_vect s (x, y, z) = Format.printf "%s = (%f, %f, %f)@." s x y z
 
+let opp (x, y, z) =
+	(-.x, -.y, -.z)
 
 let det2 a b c d = a *. c -. b *. d
 
 let det3 ((a00, a10, a20), (a01, a11, a21), (a02, a12, a22)) =
-	a00 *. a11 *. a22 +. a01 *. a12 *. a20 +. a10 *. a21 *. a02
-	-. a02 *. a22 *. a20 -. a01 *. a10 *. a22 -. a12 *. a21 *. a00
+	a00 *. a11 *. a22 +.
+	a01 *. a12 *. a20 +.
+	a10 *. a21 *. a02
+	-. a02 *. a11 *. a20
+	-. a01 *. a10 *. a22
+	-. a12 *. a21 *. a00
 
 let solve33 ((c0, c1, c2) as m) x =
 

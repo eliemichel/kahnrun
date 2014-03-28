@@ -2,7 +2,7 @@
 	open Ast
 %}
 
-%token BOX CONE CYLINDER SPHERE TORUS TRIANGLE
+%token BOX CONE CYLINDER SPHERE TORUS TRIANGLE SMOOTH_TRIANGLE
 %token UNION INTERSECTION DIFFERENCE MERGE
 %token CAMERA
 %token LBRACE RBRACE LCHEVRON RCHEVRON
@@ -82,6 +82,13 @@ primitive:
 		p3 = vector
 	RBRACE
 		{ Triangle (p1, p2, p3) }
+	|
+	SMOOTH_TRIANGLE LBRACE
+		p1 = vector COMMA n1 = vector COMMA
+		p2 = vector COMMA n2 = vector COMMA
+		p3 = vector COMMA n3 = vector
+	RBRACE
+		{ Smooth_triangle (p1, n1, p2, n2, p3, n3) }
 
 
 camera:

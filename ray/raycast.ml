@@ -28,31 +28,60 @@ let collision_primitive (origin, dir) =
 	| Sphere (c, r) ->
 		let r2 = r *. r in
 		let toobj = c -- origin in
-		let rad = toobj -- (dir ** (scal toobj dir)) in
+		let deviation = dir ** scal toobj dir in
+		let rad = toobj -- deviation in
 			if norm2(rad) > r2
 			then None
 			else
-				let hitPoint = c -- rad -- (dir ** (r2 -. norm2 rad)) in
-				let normale = normalize (hitPoint -- c) in
-					Some (hitPoint, normale)
+				let toHitPoint =
+					deviation -- (dir ** sqrt (r2 -. norm2 rad))
+				in
+				if scal dir toHitPoint < 0.
+				then None
+				else
+					let hitPoint = origin ++ toHitPoint in
+					let normale = normalize (hitPoint -- c) in
+						Some (hitPoint, normale)
 
 	| Torus (r1, r2) -> assert false
 
 	| Triangle (p1, p2, p3) ->
 		let v1 = p2 -- p1 in
 		let v2 = p3 -- p1 in
-		match solve33 (v1, v2, dir) (origin -- p1) with
+		(match solve33 (v1, v2, dir) (origin -- p1) with
 			| None -> None
 			| Some (alpha, beta, gamma) ->
 				if
-					alpha < 0. || alpha > 1.
-					|| beta < 0. || beta > 1.
+					alpha < 0. || beta < 0. || alpha +. beta > 1.
 					|| gamma > 0.
 				then None
 				else
 					let hitPoint = origin -- (dir ** gamma) in
 					let normale = normalize (v1 ^ v2) in
 						Some (hitPoint, normale)
+		)
+	
+	
+	| Smooth_triangle (p1, n1, p2, n2, p3, n3) ->
+		let v1 = p2 -- p1 in
+		let v2 = p3 -- p1 in
+		(match solve33 (v1, v2, dir) (origin -- p1) with
+			| None -> None
+			| Some (alpha, beta, gamma) ->
+				if
+					alpha < 0. || beta < 0. || alpha +. beta > 1.
+					|| gamma > 0.
+				then None
+				else
+					let hitPoint = origin -- (dir ** gamma) in
+					let normale = normalize (
+							(n1 ** (1. -. alpha -. beta)) ++
+							(n2 ** alpha) ++
+							(n3 ** beta)
+						)
+					in
+						Some (hitPoint, normale)
+		)
 
 
 let rec collision_scene ray = function
@@ -109,11 +138,11 @@ let render_pixel scene x y =
 	let w, h = scene.output_size in
 	let alpha = scene.ratio /. (float_of_int w) in
 	let campos, camlookat = scene.camera in
-	let camdir = normalize (campos -- camlookat) in
-	let b1, b2 = complete_base camdir in
+	let camdir = normalize (camlookat -- campos) in
+	let b1, b2 = complete_base (opp camdir) in
 	let diff =
 		b1 ** ((float_of_int (x - w / 2)) *. alpha) ++
-		b2 ** ((float_of_int (y + h / 2)) *. alpha)
+		b2 ** ((float_of_int (y - h / 2)) *. alpha)
 	in
 		int_of_color (render_ray scene (campos, camdir ++ diff))
 

@@ -6,12 +6,13 @@
 	
 	
 	let keywords_assoc = [
-		"box",          BOX;
-		"cone",         CONE;
-		"cylinder",     CYLINDER;
-		"sphere",       SPHERE;
-		"torus",        TORUS;
-		"triangle",     TRIANGLE;
+		"box",             BOX;
+		"cone",            CONE;
+		"cylinder",        CYLINDER;
+		"sphere",          SPHERE;
+		"torus",           TORUS;
+		"triangle",        TRIANGLE;
+		"smooth_triangle", SMOOTH_TRIANGLE;
 		
 		"union",        UNION;
 		"intersection", INTERSECTION;
