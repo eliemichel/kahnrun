@@ -1,8 +1,5 @@
-CMX=utils.cmx vecutils.cmx material.cmx ast.cmx typer.cmx parser.cmx lexer.cmx raycast.cmx main.cmx
-GEN=lexer.ml parser.ml parser.mli
 BIN=ray
-LIBS=
-SOURCES=main.ml utils.ml vecutils.ml material.ml ast.ml lexer.mll parser.mly raycast.ml
+SOURCES=main.ml utils.ml vecutils.ml material.ml ast.ml lexer.mll parser.mly raycast.ml typer.ml
 
 NO_COLOR=\033[0m
 OK_COLOR=\033[32;01m
@@ -19,48 +16,20 @@ session:
 	@gedit $(SOURCES) 2>/dev/null &
 
 
-$(BIN): $(CMX)
-	@echo "Linking for $(BIN)..."
-	@ocamlopt -o $(BIN) $(LIBS) $(CMX)
+$(BIN): $(SOURCES)
+	@echo "Building $(BIN)..."
+	ocamlbuild -use-menhir main.native
+	cp main.native $(BIN)
 	@echo "$(OK_COLOR)Done.$(NO_COLOR)"
-
-.SUFFIXES: .mli .ml .cmi .cmx .mll .mly
-
-.mli.cmi:
-	ocamlopt -c $<
-
-.ml.cmx: 
-	ocamlopt -c $<
-
-.mll.ml:
-	ocamllex $<
-
-.mly.ml:
-	menhir -v $<
-
-.mly.mli:
-	menhir -v $<
 
 
 clean:
 	@echo "Cleaning directory..."
-	@rm -v -f .depend *.cmi *.o *.automaton *.conflicts *~ $(BIN) $(CMX) $(GEN)
+	@rm -vrf _build $(BIN) main.native
 	@echo "$(OK_COLOR)Done.$(NO_COLOR)"
 
 
-.depend: $(GEN)
-	rm -f .depend
-	ocamldep *.mli *.ml > .depend
+.PHONY: all clean session
 
-dep: all
 
-.PHONY: all clean session dep
-
-ifneq ($(MAKECMDGOALS),clean)
-ifneq ($(MAKECMDGOALS),session)
-ifeq ($(MAKECMDGOALS),dep)
-include .depend
-endif
-endif
-endif
 
