@@ -62,9 +62,13 @@ let main filename =
 	let print_syntax_error = print_syntax_error filename buf in
 	(*let print_error = print_error filename in*)
 	
-	let pAst =
+	let img =
 		try
-			Parser.scene Lexer.token buf
+			let pAst = Parser.scene Lexer.token buf in
+			eprintf "Parsing done.@.";
+			let scene = Typer.process pAst in
+			eprintf "Typing done.@.";
+			Raycast.render scene
 		with
 		| Lexer.Error err -> (
 			print_syntax_error ("Lexing error: " ^ err);
@@ -75,12 +79,15 @@ let main filename =
 				("Parse error: unexpected token " ^ (Lexing.lexeme buf));
 			exit 1
 			)
+		| Typer.Error err -> (
+			print_syntax_error
+				("Render error: " ^ err);
+			exit 1
+			)
 		| _ -> exit 2
 	in
-	eprintf "Parsing done.@.";
-	let scene = Typer.process pAst in
-	eprintf "Typing done.@.";
-	save_bmp "test.bmp" (Raycast.render scene);
+	
+	save_bmp "test.bmp" img;
 	exit 0
 
 let () = Arg.parse
