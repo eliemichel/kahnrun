@@ -151,3 +151,52 @@ end
 
 
 
+
+
+module Proc: S = struct
+	type 'a process = (unit -> 'a)
+	
+	type 'a channel = { q: 'a Queue.t ; m: Mutex.t; }
+	type 'a in_port = 'a channel
+	type 'a out_port = 'a channel
+	
+	let new_channel () =
+		let q = { q = Queue.create (); m = Mutex.create (); } in
+		q, q
+	
+	let put v c () =
+		Mutex.lock c.m;
+		Queue.push v c.q;
+		Mutex.unlock c.m
+	
+	let rec get c () =
+		try
+			Mutex.lock c.m;
+			let v = Queue.pop c.q in
+				Mutex.unlock c.m;
+				v
+		with Queue.Empty ->
+			Mutex.unlock c.m;
+			get c ()
+	
+	let doco l () =
+		let rec aux pids = function
+			| [] -> List.iter (fun pid -> ignore (Unix.waitpid [] pid)) pids
+			| f :: q -> Format.printf "Fork !@.";
+				match Unix.fork () with
+				| 0 -> f ()
+				| pid -> aux (pid :: pids) q
+		in aux [] l
+	
+	let return v = (fun () -> v)
+	
+	let bind e e' () =
+		let v = e () in
+		e' v ()
+	
+	let run e = e ()
+end
+
+
+
+
