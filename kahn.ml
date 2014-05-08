@@ -197,24 +197,30 @@ let make_addr serv port =
 	ADDR_INET (host, port)
 
 
-(*
+
 module Sock: S = struct
 	type 'a process = (unit -> 'a)
 	
 	type 'a in_port = in_channel
 	type 'a out_port = out_channel
 	type 'a channel = 'a in_port * 'a out_port
+
+	let new_channel_addr addr =
+		let sock_in = socket PF_INET SOCK_STREAM 0 in
+		let sock_serv = socket PF_INET SOCK_STREAM 0 in
+			bind sock_serv addr;
+			listen sock_serv 1;
+			connect sock_in addr;
+			let sock_out, _ = accept sock_serv in
+		
+			in_channel_of_descr sock_in, out_channel_of_descr sock_out
 	
-	let new_channel () =
-		let sock = socket PF_INET SOCK_STREAM 0 in
-			bind sock addr;
-			listen sock 1;
-			let client_sock, client_addr = accept sock in
-				service client_sock client_addr
-				(*connect sock2 addr*)
-		let o, i = pipe () in
-			in_channel_of_descr o, out_channel_of_descr i
-	
+	let rec new_channel () =
+		let port = 1024 + Random.int 64611 in
+		Format.eprintf "Attempt to create a socket pipe on port %d...@." port;
+		new_channel_addr (make_addr "localhost" port)
+		(*with _ -> new_channel ()*)
+
 	let put v c () =
 		Marshal.to_channel c v []
 	
@@ -239,7 +245,6 @@ module Sock: S = struct
 	let run e = e ()
 end
 
-*)
 
 
 
