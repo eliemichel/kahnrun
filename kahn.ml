@@ -1,3 +1,5 @@
+open Unix
+
 module type S = sig
   type 'a process
   type 'a in_port
@@ -161,8 +163,8 @@ module Proc: S = struct
 	type 'a channel = 'a in_port * 'a out_port
 	
 	let new_channel () =
-		let o, i = Unix.pipe () in
-			Unix.in_channel_of_descr o, Unix.out_channel_of_descr i
+		let o, i = pipe () in
+			in_channel_of_descr o, out_channel_of_descr i
 	
 	let put v c () =
 		Marshal.to_channel c v []
@@ -172,9 +174,9 @@ module Proc: S = struct
 	
 	let doco l () =
 		let rec aux pids = function
-			| [] -> List.iter (fun pid -> ignore (Unix.waitpid [] pid)) pids
+			| [] -> List.iter (fun pid -> ignore (waitpid [] pid)) pids
 			| f :: q ->
-				match Unix.fork () with
+				match fork () with
 				| 0 -> f ()
 				| pid -> aux (pid :: pids) q
 		in aux [] l
@@ -187,6 +189,58 @@ module Proc: S = struct
 	
 	let run e = e ()
 end
+
+
+
+let make_addr serv port =
+	let host = (gethostbyname serv).h_addr_list.(0) in
+	ADDR_INET (host, port)
+
+
+(*
+module Sock: S = struct
+	type 'a process = (unit -> 'a)
+	
+	type 'a in_port = in_channel
+	type 'a out_port = out_channel
+	type 'a channel = 'a in_port * 'a out_port
+	
+	let new_channel () =
+		let sock = socket PF_INET SOCK_STREAM 0 in
+			bind sock addr;
+			listen sock 1;
+			let client_sock, client_addr = accept sock in
+				service client_sock client_addr
+				(*connect sock2 addr*)
+		let o, i = pipe () in
+			in_channel_of_descr o, out_channel_of_descr i
+	
+	let put v c () =
+		Marshal.to_channel c v []
+	
+	let rec get c () =
+		Marshal.from_channel c
+	
+	let doco l () =
+		let rec aux pids = function
+			| [] -> List.iter (fun pid -> ignore (waitpid [] pid)) pids
+			| f :: q ->
+				match fork () with
+				| 0 -> f ()
+				| pid -> aux (pid :: pids) q
+		in aux [] l
+	
+	let return v = (fun () -> v)
+	
+	let bind e e' () =
+		let v = e () in
+		e' v ()
+	
+	let run e = e ()
+end
+
+*)
+
 
 
 
