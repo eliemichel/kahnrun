@@ -1,4 +1,12 @@
 open Unix
+open Sys
+
+let make_addr serv port =
+	let host = (gethostbyname serv).h_addr_list.(0) in
+	ADDR_INET (host, port)
+
+let master_addr = make_addr "localhost" 4455
+let max_slaves = 4
 
 module type S = sig
   type 'a process
@@ -191,13 +199,6 @@ module Proc: S = struct
 end
 
 
-
-let make_addr serv port =
-	let host = (gethostbyname serv).h_addr_list.(0) in
-	ADDR_INET (host, port)
-
-
-
 module Sock: S = struct
 	type 'a process = (unit -> 'a)
 	
@@ -246,6 +247,235 @@ module Sock: S = struct
 end
 
 
+
+module Sock2: S = struct
+	
+
+	let count_process = ref (-1)
+	let new_process_id () =
+		incr count_process;
+		!count_process
+
+	type 'a process = int * (unit -> 'a)
+	
+	(*
+	type 'a in_port =
+		| BOUND_IN_PORT of in_channel
+		| WAINTING_IN_PORT of *)
+	type 'a in_port = in_channel
+	type 'a out_port = out_channel
+	type 'a channel = 'a in_port * 'a out_port
+
+	let new_channel_addr addr =
+		let sock_in = socket PF_INET SOCK_STREAM 0 in
+		let sock_serv = socket PF_INET SOCK_STREAM 0 in
+			bind sock_serv addr;
+			listen sock_serv 1;
+			connect sock_in addr;
+			let sock_out, _ = accept sock_serv in
+		
+			in_channel_of_descr sock_in, out_channel_of_descr sock_out
+	
+	let rec new_channel () =
+		let port = 1024 + Random.int 64611 in
+		Format.eprintf "Attempt to create a socket pipe on port %d...@." port;
+		new_channel_addr (make_addr "localhost" port)
+		(*with _ -> new_channel ()*)
+
+	let put v c =
+		new_process_id (),
+		fun () -> Marshal.to_channel c v []
+	
+	let rec get c =
+		new_process_id (),
+		fun () -> Marshal.from_channel c
+	
+	let doco l =
+		let rec aux pids = function
+			| [] -> List.iter (fun pid -> ignore (waitpid [] pid)) pids
+			| f :: q ->
+				match fork () with
+				| 0 -> snd f ()
+				| pid -> aux (pid :: pids) q
+		in
+			new_process_id (),
+			fun () -> aux [] l
+	
+	let return v =
+		new_process_id (),
+		fun () -> v
+	
+	let bind e e' =
+		let v = snd e () in
+			new_process_id (),
+			fun () -> snd (e' v) ()
+	
+	let run e = snd e ()
+end
+
+
+
+
+let print_sockaddr = function
+	| ADDR_INET (addr, port) -> Format.sprintf "%s (port %d)" (string_of_inet_addr addr) port
+	| _ -> "[unix]"
+
+
+module SockMaster: S = struct
+	
+
+	let slaves = ref []
+	let sock_serv = socket PF_INET SOCK_STREAM 0
+	let initialized = ref false
+
+	let init () =
+		if not !initialized then (
+			Format.eprintf "Searching for slaves...@.";
+			bind sock_serv master_addr;
+			listen sock_serv max_slaves;
+			
+
+			let research () =
+				while List.length !slaves < max_slaves do
+					let slave = accept sock_serv in
+						Format.eprintf "Slave found at %s@." (print_sockaddr (snd slave));
+						slaves := slave :: !slaves
+				done
+			in
+
+			match fork () with
+				| 0 -> research ()
+				| pid -> (
+					for i = 5 downto 1 do
+						Format.eprintf "%d@." i;
+						sleep 1
+					done;
+					kill pid sigint;
+					initialized := true
+				)
+		)
+
+	type 'a process = (unit -> 'a)
+	
+	type 'a in_port = in_channel
+	type 'a out_port = out_channel
+	type 'a channel = 'a in_port * 'a out_port
+
+	let new_channel_addr addr =
+		let sock_in = socket PF_INET SOCK_STREAM 0 in
+		let sock_serv = socket PF_INET SOCK_STREAM 0 in
+			bind sock_serv addr;
+			listen sock_serv 1;
+			connect sock_in addr;
+			let sock_out, _ = accept sock_serv in
+		
+			in_channel_of_descr sock_in, out_channel_of_descr sock_out
+	
+	let rec new_channel () =
+		let port = 1024 + Random.int 64611 in
+		Format.eprintf "Attempt to create a socket pipe on port %d...@." port;
+		try new_channel_addr (make_addr "localhost" port)
+		with _ -> new_channel ()
+
+	let put v c () =
+		Marshal.to_channel c v []
+	
+	let rec get c () =
+		Marshal.from_channel c
+	
+	let doco l () =
+		let rec aux pids = function
+			| [] -> List.iter (fun pid -> ignore (waitpid [] pid)) pids
+			| f :: q ->
+				match fork () with
+				| 0 -> f ()
+				| pid -> aux (pid :: pids) q
+		in aux [] l
+	
+	let return v = (fun () -> v)
+	
+	let bind e e' () =
+		let v = e () in
+		e' v ()
+	
+	let run e =
+		init ();
+		e ()
+end
+
+
+
+module SockSlave: S = struct
+	
+	let root_sock = socket PF_INET SOCK_STREAM 0
+	let initialized = ref false
+
+	let init () =
+		if not !initialized then (
+			Format.eprintf "Waiting for master...@.";
+			let rec try_loop () =
+				try connect root_sock master_addr
+				with Unix_error (ECONNREFUSED, "connect", "") -> try_loop ()
+			in
+				try_loop ();
+				Format.eprintf "Connection established.@.";
+				initialized := true
+		)
+
+	let wait_instr () =
+		Format.eprintf "Waiting for instruction...";
+		while true do () done
+	
+
+	type 'a process = (unit -> 'a)
+	
+	type 'a in_port = in_channel
+	type 'a out_port = out_channel
+	type 'a channel = 'a in_port * 'a out_port
+
+	let new_channel_addr addr =
+		let sock_in = socket PF_INET SOCK_STREAM 0 in
+		let sock_serv = socket PF_INET SOCK_STREAM 0 in
+			bind sock_serv addr;
+			listen sock_serv 1;
+			connect sock_in addr;
+			let sock_out, _ = accept sock_serv in
+		
+			in_channel_of_descr sock_in, out_channel_of_descr sock_out
+	
+	let rec new_channel () =
+		let port = 1024 + Random.int 64611 in
+		Format.eprintf "Attempt to create a socket pipe on port %d...@." port;
+		try new_channel_addr (make_addr "localhost" port)
+		with _ -> new_channel ()
+
+	let put v c () =
+		Marshal.to_channel c v []
+	
+	let rec get c () =
+		Marshal.from_channel c
+	
+	let doco l () =
+		let rec aux pids = function
+			| [] -> List.iter (fun pid -> ignore (waitpid [] pid)) pids
+			| f :: q ->
+				match fork () with
+				| 0 -> f ()
+				| pid -> aux (pid :: pids) q
+		in aux [] l
+	
+	let return v = (fun () -> v)
+	
+	let bind e e' () =
+		let v = e () in
+		e' v ()
+	
+	let run e =
+		init ();
+		wait_instr ();
+		e ()
+
+end
 
 
 

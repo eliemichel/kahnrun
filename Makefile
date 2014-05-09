@@ -5,6 +5,8 @@ TARGET=native
 
 example:
 	$(OCAMLBUILD) example.$(TARGET)
+	$(OCAMLBUILD) example_slave.$(TARGET)
+	$(OCAMLBUILD) example_master.$(TARGET)
 
 
 clean:
