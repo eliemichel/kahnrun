@@ -74,6 +74,8 @@ end
 
 module Master = struct
 	
+	let BROADCAST = 0
+	let ADD_OUT = 1
 
 
 	let run () =
@@ -82,12 +84,34 @@ module Master = struct
 		bind sock_serv master_addr;
 		listen sock_serv max_nodes;*)
 		
-		let handler input output =
+		let forward input output =
 			while true do
-				let l = input_line input in
-					print_endline l;
-					output_line output l
+				output_line output (input_line input)
 			done
+
+		let prefix_forward input output =
+			while true do
+				output_byte output BROADCAST;
+				output_line output (input_line input)
+			done
+
+		let broadcast input =
+			let outputs = ref [] in
+			while true do
+				(* Protocole à documenter *)
+				(* Exceptions à rattraper *)
+				match input_byte input with
+				| BROADCAST -> 
+					let l = input_line input in
+					List.iter !outputs (fun o -> output_line o l)
+				| ADD_OUT -> 
+					let output = Marshall.from_channel input in
+					outputs := output :: !outputs
+			done
+
+		let handler input output =
+			broadcast input'
+			prefix_forward input input'
 
 		in establish_server handler master_addr
 
