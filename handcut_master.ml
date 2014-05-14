@@ -1,0 +1,2 @@
+
+let () = Handcut.Master.run ()
