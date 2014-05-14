@@ -16,8 +16,13 @@ let output_line output line =
 	output_string output "\n";
 	flush output
 
+
+(* ----- OPTIONS ----- *)
 let master_addr = make_addr "localhost" 4455
 let max_nodes = 4
+let buffer_size = 4096
+let echo_on = true
+(* ----- ------- ----- *)
 
 module type S = sig
   type 'a process
@@ -70,77 +75,47 @@ module Lib (K : S) = struct
 end
 
 
-
-
 module Master = struct
-	
-	let BROADCAST = 0
-	let ADD_OUT = 1
-
 
 	let run () =
 		Format.eprintf "Searching for nodes...@.";
-		(*let sock_serv = socket PF_INET SOCK_STREAM 0 in
+		let nodes = ref [] in
+		let sock_serv = socket PF_INET SOCK_STREAM 0 in
 		bind sock_serv master_addr;
-		listen sock_serv max_nodes;*)
+		listen sock_serv max_nodes;
 		
-		let forward input output =
-			while true do
-				output_line output (input_line input)
-			done
 
-		let prefix_forward input output =
-			while true do
-				output_byte output BROADCAST;
-				output_line output (input_line input)
-			done
-
-		let broadcast input =
-			let outputs = ref [] in
-			while true do
-				(* Protocole à documenter *)
-				(* Exceptions à rattraper *)
-				match input_byte input with
-				| BROADCAST -> 
-					let l = input_line input in
-					List.iter !outputs (fun o -> output_line o l)
-				| ADD_OUT -> 
-					let output = Marshall.from_channel input in
-					outputs := output :: !outputs
-			done
-
-		let handler input output =
-			broadcast input'
-			prefix_forward input input'
-
-		in establish_server handler master_addr
-
-		(*
-		let research () =
-			while List.length !nodes < max_nodes do
-				let node = accept sock_serv in
-					Format.eprintf "Node found at %s@." (print_sockaddr (snd node));
-					nodes := node :: !nodes
-			done
+		let broadcast fdin =
+			let buffer = String.create buffer_size in
+			let rec copy() =
+				match read fdin buffer 0 buffer_size with
+				| 0 -> ()
+				| n ->
+					List.iter (fun node ->
+						if node != fdin || echo_on
+						then ignore (write node buffer 0 n)
+					) !nodes;
+					copy ()
+			in
+			copy ()
 		in
 
-		let loop () =
 
+		let rec research () =
+			if List.length !nodes < max_nodes
+			then
+				let node, addr = accept sock_serv in
+					Format.eprintf "Node found at %s@." (print_sockaddr addr);
+					nodes := node :: !nodes;
+					let th = Thread.create broadcast node in
+						research ();
+						Thread.join th
 
-		match fork () with
-		| 0 -> research ()
-		| pid -> (
-			for i = 5 downto 1 do
-				Format.eprintf "%d@." i;
-				sleep 1
-			done;
-			kill pid sigint;
-			while true do loop () done
-		)
-		*)
+			else Format.eprintf "Maximum amount of nodes raised: %i@." max_nodes
+		in
 
-
-
+		research ()
+		
 	
 end
 
