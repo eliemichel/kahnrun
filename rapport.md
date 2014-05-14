@@ -1,5 +1,5 @@
 
-Khanrun
+Kahnrun
 =======
 
 *Rapport de projet*
@@ -41,7 +41,7 @@ Dans les solutions, on peut alors envisager :
 
   - De faire du *preprocessing* sur le code OCaml. Lourd à mettre en place et pas très satisfaisant : c'est sale.
   - Créer un autre langage et l'interprêter plutôt que de le compiler. Le travail consiste donc simplement à faire une machine virtuelle distribuée sur les différentes machines disponibles. Le problème est qu'il faut du coup réinventer la roue en mettant les bases du langage (opérations arithmétiques, etc) et on ne peut pas profiter dans les applications de bibliothèques de fonctions existantes. Lourd à mettre en place et pas très satisfaisant : c'est sale et ça donne un truc inutilisable.
-   - Ou alors on utilise un langage déjà existant, mais comprendre un interpreteur déjà existant, c'est un travail de longue haleine et on n'a clairement pas le temps de se lancer là-dedans.
+  - Ou alors on utilise un langage déjà existant, mais comprendre un interpreteur déjà existant, c'est un travail de longue haleine et on n'a clairement pas le temps de se lancer là-dedans.
 
 Bon, donc en fait j'ai pas de solution actuellement, il faut qu'on y réfléchisse.
 
