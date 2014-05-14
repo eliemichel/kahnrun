@@ -1,3 +1,8 @@
 *~
 *.bmp
 _build
+*.sublime-project
+*.sublime-workspace
+*.native
+tests/
+ray/ray
