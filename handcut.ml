@@ -17,6 +17,12 @@ let output_line output line =
 	flush output
 
 
+let escape_hyperchan str =
+	try
+		ignore (String.index str '!');
+		raise (Invalid_argument "hyperchan should not contain exclamation mark ('!')")
+	with Not_found -> str
+
 (* ----- OPTIONS ----- *)
 let master_addr = make_addr "localhost" 4455
 let max_nodes = 4
@@ -40,8 +46,8 @@ module type S = sig
 
   val run: 'a process -> 'a
 
-  val export: string * 'a out_port
-  val import: string * 'a in_port
+  val export: string * 'a out_port -> unit process
+  val import: string * 'a in_port -> unit process
 end
 
 module Lib (K : S) = struct
@@ -119,24 +125,29 @@ module Master = struct
 	
 end
 
-(*)
+
 
 module Node: S = struct
 	
-	let root_sock = socket PF_INET SOCK_STREAM 0
+	let sock = socket PF_INET SOCK_STREAM 0
+	let srvin = out_channel_of_descr sock
+	let srvout = in_channel_of_descr sock
 	let initialized = ref false
 
-	let init () =
+	let init () = 
 		if not !initialized then (
 			Format.eprintf "Waiting for master...@.";
 			let rec try_loop () =
-				try connect root_sock master_addr
+				try connect sock master_addr
 				with Unix_error (ECONNREFUSED, "connect", "") -> try_loop ()
 			in
 				try_loop ();
 				Format.eprintf "Connection established.@.";
 				initialized := true
 		)
+
+	let close () =
+		if !initialized then shutdown sock SHUTDOWN_ALL
 	
 
 	type 'a process = (unit -> 'a)
@@ -184,14 +195,29 @@ module Node: S = struct
 	
 	let run e =
 		init ();
-		e ()
+		let v = e () in
+		close ();
+		v
 
 
-	let export (hyperchan, out) = return ()
 
-	let improt (hyperchan, in) = return ()
+
+	let export (hyperchan, cin) =
+		bind (return ()) (return (fun () ->
+			while true do
+				let hl = input_line srvout in
+				let l = hl in (*(escape_hyperchan hyperchan) *)
+					output_line cin l
+			done
+		))
+
+	let import (hyperchan, cout) =
+		bind (return ()) (return (fun () -> (* delay expansé *)
+			while true do
+				let l = input_line cout in
+					output_line srvin (Format.sprintf "%s!%s" (escape_hyperchan hyperchan) l)
+			done
+		))
 end
 
 
-
-*)
