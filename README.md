@@ -15,6 +15,20 @@ Jonathan Laurent
 Afin de le rendre plus agréable à la fois à lire et à rédiger, ce rapport prend la forme d'une liste de notes thématiques. Elles sont classées par ordre chronologique afin de mettre en évidence l'évolution de nos réflexions.
 
 
+
+Petit retour sur la fonction `delay`
+------------------------------------
+
+J'ai mis du temps à comprendre l'intérêt de la construction `delay`. Elle semble à première vue tout à fait identique à un simple `return (f x)`. Sauf que non. La version avec un simple `return` calcule en fait *avant* la création du processus la valeur `f x` à retourner et le processus en lui-même est alors très simple : il retourne une valeur et puis c'est tout.
+
+La version `delay` crée un processus à partir de `f` et`x` séparément et qui calcule *une fois lancé* la valeur `f x` avant de la retourner. Ce qui est important est que le calcul se fait dans le processus et permet donc de profiter des mécanismes de parallèlisme de l'implémentation.
+
+*Élie, 14.05*
+
+
+
+
+
 Pourquoi la version en réseau m'emmerde
 ---------------------------------------
 
@@ -53,14 +67,42 @@ Bon, donc en fait j'ai pas de solution actuellement, il faut qu'on y réfléchis
 
 
 
-Petit retour sur la fonction `delay`
-------------------------------------
 
-J'ai mis du temps à comprendre l'intérêt de la construction `delay`. Elle semble à première vue tout à fait identique à un simple `return (f x)`. Sauf que non. La version avec un simple `return` calcule en fait *avant* la création du processus la valeur `f x` à retourner et le processus en lui-même est alors très simple : il retourne une valeur et puis c'est tout.
+Une solution temporaire pour la version en réseau
+-------------------------------------------------
 
-La version `delay` crée un processus à partir de `f` et`x` séparément et qui calcule *une fois lancé* la valeur `f x` avant de la retourner. Ce qui est important est que le calcul se fait dans le processus et permet donc de profiter des mécanismes de parallèlisme de l'implémentation.
+Comme dit précédemment, le problème de l'implémentation en réseau est de communiquer aux différentes machines ce qu'elles doivent faire. On ne peut envoyer du code puisqu'il est compilé au moment de l'exécution. Je me suis donc résigné à modifier un peu l'interface proposée afin de la rendre implémentable.
 
-*Élie, 14.05*
+J'avais évoqué l'idée d'enregistrer les différentes fonctions afin d'avoir plusieurs points d'entrée et donc de pouvoir communiquer sur cette base — dire « lance la fonction qui est enregistrée à tel nom » à une machine ». Mais c'est assez lourd pour l'utilisateur de l'interface qui peut alors facilement oublier — ou avoir la flemme — d'enregistrer les fonctions et se retrouver donc avec un réseau exécuté sur une unique machine.
+
+Je me suis alors dirigé vers une autre idée : diviser à la main le réseau entre les différentes machines. Certes, on peut là aussi ne pas prendre la peine de le faire, mais il est au moins plus clair que le programme sera sur une unique machine puisqu'on a désormais « un fichier = une machine ».
+
+Afin de permettre la communication entre ces différents réseaux, il a alors fallu ajouter un nouveau type de canal de communication, nommé *hyperchan*. Ces nouveaux cannaux permettent de communiquer entre machines et doivent donc posséder un identifiant unique. Pour des raisons de lisibilité, j'ai préféré utiliser une chaîne de caractères, ce qui de toutes façons est plus simple à utiliser avec les sockets.
+
+Deux fonctions ont donc été ajoutées : `import` et `export` qui permettent respectivement de rediriger un hyperchan sur un port d'entrée et de rediriger un port de sortie vers un hyperchan. Afin de simplifier l'implémentation, les identifiants d'hyperchan ne doivent pas contenir de point d'exclamation.
+
+Reste à trouver comment implémenter ce mécanisme concrêtement.
+
+J'ai commencé par faire deux versions de l'interface : `Server` et `Client`. La première commençais systématiquement par attendre pendant 5s d'éventuels clients avant de commencer son job habituel de réseau de Kahn. La seconde essayait de se connecter au serveur jusqu'à ce que ça marche avant de lancer son réseau de Kahn.
+
+Mais en fait, mise à part la fonction d'initialisation, il n'y avait en fait aucune différence entre ces deux implémentations. J'ai donc cherché à faire un système peer to peer, d'autant plus que ce serait un système potentiellement plus souple. Chaque nœud — je ne l'appelle plus client puisqu'il n'y a plus de serveur — écoute alors le réseau pour les entrées d'hyperchans d'une part et se connecte au besoin aux autres lorsqu'ils exportent un port.
+
+Le problème est alors de savoir :
+
+ 1. Où sont les autres ?
+ 2. Qui possède l'entrée d'un hyperchan donné ? (On n'a accès qu'à son identifiant a priori.)
+
+Pour cela, il a finalement été nécessaire de conserver un point central au réseau, qui serait connu de tous. Un serveur en gros. Mais ce serveur n'a en fait vraiment pas besoin d'être élaboré et surtout n'est pas un nœud du réseau de calcul.
+
+Ce serveur est donc en fait un serveur de tchat : il écoute et diffuse les messages de chacun à tous les autres. On n'a en effet besoin en pratique que de broadcasting puisqu'il sert uniquement à initialiser les hyperchans, afin de savoir où se situe l'autre machine le partageant. Une fois les deux pairs d'une connexion mutuellement identifiés, le serveur n'est alors plus utilisé.
+
+Ainsi, une fois tous les hyperchans apairés, le serveur n'est plus utile et peut donc être coupé.
+
+La séparation en plusieurs fichiers peut sembler un peu rigide puisqu'elle fixe le nombre de machines. On peut cependant faire tourner plusieurs nœuds sur la même machine donc en prévoire un nombre conséquent dès le début. On peut également par la suite imaginer dupliquer les nœuds et prendre en compte la réponse de la plus réactive. Il faudra cependant être attentif à ce moment à bien gérer les lectures multiples dans un même hyperchan.
+
+*Élie, 15.05*
+
+
 
 
 
