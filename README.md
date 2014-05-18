@@ -115,3 +115,22 @@ Du coup, maintenant que la version précédemment designée est presque terminé
 
 *Élie, 18.06*
 
+
+
+
+Petite réorganisation
+---------------------
+
+Puisque je dois de toutes façons reprendre pas mal de trucs, j'en profite pour organiser un peu mieux les fichiers et faire un rappel de ce qu'il y a à voir.
+
+Le premier fichier susceptible de vous intéresser est le fichier `params.ml` qui définit les constantes utilisées dans le reste du projet comme par exemple l'adresse et le port du serveur.
+
+Le fichier `kahn.ml` regroupe ensuite l'interface `Kahn` suivie de ses différentes implémentations. C'est un fichier un peu long et « fourre-tout » pour le moment mais c'est plus clair dans les autres fichiers si tout ce qui concerne cette interface est préfixé par `Kahn.`.
+
+Le module `Handcut` en est une copie complètant l'interface avec les fonctions `import` et `export` proposées dans un précédent paragraphe. Il disparaîtra donc sûrement à terme.
+
+Le fichier `utils.ml` est le passage forcé de tout développement en OCaml : il complète les fonctions de la bibliothèque standard avec de petites fonctions usuelles. S'il devenait trop important, on pourraît envisager de le découper en sections thèmatiques mais ce n'est pour le moment pas nécessaire.
+
+*Élie, 18.06*
+
+
