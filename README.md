@@ -33,7 +33,7 @@ Pourquoi la version en réseau m'emmerde
 ---------------------------------------
 
 
-Le principal problème avec la version en réseau, c'est l'impossibilité de partager de la mémoire. La mémoire que j'ai besoin de partager n'est pas celle des variables. Celle-là je peux toujours la faire passer par les sockets, avec Marshall et tout. Non, ce qui m'embête c'est de partager les fonctions, le cœur du programme.
+Le principal problème avec la version en réseau, c'est l'impossibilité de partager de la mémoire. La mémoire que j'ai besoin de partager n'est pas celle des variables. Celle-là je peux toujours la faire passer par les sockets, avec Marshal et tout. Non, ce qui m'embête c'est de partager les fonctions, le cœur du programme.
 
 Tant qu'on manipule des processus, tout va bien puisque le type processus, c'est moi qui le choisi. Je peux trè bien imaginer que c'est un simple identifiant et qu'on a des tables faisant la correspondance avec une machine, un pid, etc.
 
@@ -105,4 +105,13 @@ La séparation en plusieurs fichiers peut sembler un peu rigide puisqu'elle fixe
 
 
 
+
+Le retour de Marshal
+---------------------
+
+Bon, en fait il semblerait que le module Marshal fonctionne… Le source de mon erreur est simple : j ne l'avais testé que dans le toplevel. Or, le fonctionnement de ce module est asez simple : il transmet les fonctions sous leur forme compilée. Donc forcément, dans le toplevel — qui ne compile pas — ça ne pouvait pas marcher.
+
+Du coup, maintenant que la version précédemment designée est presque terminée, je vais la finir, puis je vais reprendre l'idée initiale, basée sur Marshal.
+
+*Élie, 18.06*
 

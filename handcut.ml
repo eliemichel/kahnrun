@@ -16,6 +16,8 @@ let output_line output line =
 	output_string output "\n";
 	flush output
 
+let tee cin =
+	cin (* TODO *)
 
 let escape_hyperchan str =
 	try
@@ -46,8 +48,8 @@ module type S = sig
 
   val run: 'a process -> 'a
 
-  val export: string * 'a out_port -> unit process
-  val import: string * 'a in_port -> unit process
+  val export: string * 'a in_port -> unit process
+  val import: string * 'a out_port -> unit process
 end
 
 module Lib (K : S) = struct
@@ -82,7 +84,7 @@ end
 
 
 module Master = struct
-
+	(** Master est juste un serveur d'écho pour servir aux différents paires à s'identifier. *)
 	let run () =
 		Format.eprintf "Searching for nodes...@.";
 		let nodes = ref [] in
@@ -155,23 +157,11 @@ module Node: S = struct
 	type 'a in_port = in_channel
 	type 'a out_port = out_channel
 	type 'a channel = 'a in_port * 'a out_port
-
-	let new_channel_addr addr =
-		let sock_in = socket PF_INET SOCK_STREAM 0 in
-		let sock_serv = socket PF_INET SOCK_STREAM 0 in
-			bind sock_serv addr;
-			listen sock_serv 1;
-			connect sock_in addr;
-			let sock_out, _ = accept sock_serv in
-		
-			in_channel_of_descr sock_in, out_channel_of_descr sock_out
 	
-	let rec new_channel () =
-		let port = 1024 + Random.int 64611 in
-		Format.eprintf "Attempt to create a socket pipe on port %d...@." port;
-		try new_channel_addr (make_addr "localhost" port)
-		with _ -> new_channel ()
-
+	let new_channel () =
+		let o, i = pipe () in
+			in_channel_of_descr o, out_channel_of_descr i
+	
 	let put v c () =
 		Marshal.to_channel c v []
 	
@@ -199,19 +189,17 @@ module Node: S = struct
 		close ();
 		v
 
-
-
-
-	let export (hyperchan, cin) =
+	let import (hyperchan, cin) =
 		bind (return ()) (return (fun () ->
+			let mysrvout = tee srvout in
 			while true do
-				let hl = input_line srvout in
+				let hl = input_line mysrvout in
 				let l = hl in (*(escape_hyperchan hyperchan) *)
 					output_line cin l
 			done
 		))
 
-	let import (hyperchan, cout) =
+	let export (hyperchan, cout) =
 		bind (return ()) (return (fun () -> (* delay expansé *)
 			while true do
 				let l = input_line cout in

@@ -5,10 +5,10 @@ module Example (K : Handcut.S) = struct
 
   let main : unit K.process =
     (delay K.new_channel ()) >>=
-    (fun (q_in, q_out) -> K.doco [ delay K.export ("integers", q_out) ; delay K.import ("output", q_in) ; ])
+    (fun (q_in, q_out) -> K.doco [ K.import ("integers", q_out) ; K.export ("output", q_in) ])
 
 end
 
-module E = Example(Handcut.Master)
+module E = Example(Handcut.Node)
 
 let () = E.K.run E.main
