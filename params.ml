@@ -6,5 +6,6 @@ let max_nodes = 4
 let max_chans = 100
 let buffer_size = 4096
 let echo_on = true
+let local_filename = "kahn_node_local_socket"
 (* ----- ------- ----- *)
 

@@ -259,7 +259,7 @@ module Network: S = struct
 	
 	let sock = socket PF_INET SOCK_STREAM 0
 	let serv = socket PF_INET SOCK_STREAM 0
-	let local = socket PF_UNIX SOCK_STREAM 0
+	let local = socket PF_INET SOCK_STREAM 0 (* J'ai voulu utiliser une socket UNIX mais sans succès (Invalid argument lors de attach) *)
 	let srvin = out_channel_of_descr sock
 	let srvout = in_channel_of_descr sock
 	let initialized = ref false
@@ -268,23 +268,39 @@ module Network: S = struct
 	let last_channel_id = ref 0
 
 	let handle_in node =
-		let attached_chan = Protocole.read1 node Protocole.Channel_id in
+		let attached_chan = Protocol.read node Protocol.In_port in
 			if Hashtbl.mem lut_in attached_chan
-			then Protocole.error node "Channel already attached"
+			then Protocol.error node "Channel already attached"
 			else
 				Hashtbl.add lut_in attached_chan node;
-				Protocole.ack node
+				Protocol.ack node
 
 	let rec listen_in () =
-		if Hashtbl.length lut_in < max_chans
-		then
-			let node, addr = accept sock in
-				eprintf "Node input from %s@." (print_sockaddr addr);
-				let th = Thread.create handle_in node in
-					listen_in ();
-					Thread.join th
+		let node, addr = accept sock in
+			eprintf "Node input from %s@." (print_sockaddr addr);
+			let th = Thread.create handle_in node in
+				listen_in ();
+				Thread.join th
 
-		else eprintf "Maximum amount of channels raised: %i@." max_chans
+	let handle_channel_request req =
+		match Protocol.read_header req with
+			| Protocol.In_port ->
+				let id = Protocol.read_int req in (
+					try Marshal.to_channel (out_channel_of_descr req) (Hashtbl.find lut_in id) []
+					with Not_found -> Protocol.error req "In port not found"
+				)
+			| Protocol.Out_port ->
+				let id = Protocol.read_int req in (
+					try Marshal.to_channel (out_channel_of_descr req) (Hashtbl.find lut_in id) []
+					with Not_found -> Protocol.error req "Out port not found"
+				)
+			| _ -> Protocol.error req "Port type expected"
+
+	let rec channel_manager () =
+		let req, _ = accept local in
+			let th = Thread.create handle_channel_request req in
+				channel_manager ();
+				Thread.join th
 
 	let init () = 
 		if not !initialized then (
@@ -293,33 +309,50 @@ module Network: S = struct
 				try connect sock master_addr
 				with Unix_error (ECONNREFUSED, "connect", "") -> try_loop ()
 			in
-				try_loop ();
-				eprintf "Connection established.@.";
-				eprintf "Starting node server...@.";
-				let rec aux () =
-					let port = random_port () in
-					eprintf "Trying port %d...@." port;
-					(
-						try bind serv (make_addr "localhost" port)
-						with _ -> aux ()
-					)
-				in aux ();
-				listen serv max_chans;
-				eprintf "Node server runing.@.";
-				eprintf "Starting channel manager...@.";
-				bind local (ADDR_UNIX "kahn_node");
-				listen local max_chans;
-				eprintf "Channel manager runing.@.";
-				initialized := true
-		)
+			try_loop ();
+			eprintf "Connection established.@.";
+			
+			eprintf "Starting node server...@.";
+			let rec aux () =
+				let port = random_port () in
+				eprintf "Trying port %d...@." port;
+				(
+					try bind serv (make_addr "localhost" port)
+					with _ -> aux ()
+				)
+			in aux ();
+			listen serv max_chans;
+			eprintf "Node server runing.@.";
+			
+			eprintf "Starting channel manager...@.";
+			let rec aux () =
+				let port = random_port () in
+				eprintf "Trying port %d...@." port;
+				(
+					try bind local (make_addr "localhost" port)
+					with _ -> aux ()
+				)
+			in
+			let local_addr = aux () in
+			listen local max_chans;
+			eprintf "Channel manager runing.@.";
 
-	let close () =
-		if !initialized
-		then (
-			shutdown sock SHUTDOWN_ALL;
-			shutdown serv SHUTDOWN_ALL;
-			shutdown local SHUTDOWN_ALL
+			let listen_in_th = Thread.create listen_in () in
+			let channel_manager_th = Thread.create channel_manager () in
+			initialized := true;
+
+			(* let close = *) fun () ->
+			if !initialized
+			then (
+				shutdown sock SHUTDOWN_ALL;
+				shutdown serv SHUTDOWN_ALL;
+				shutdown local SHUTDOWN_ALL;
+				Thread.join listen_in_th;
+				Thread.join channel_manager_th
+			)
+		
 		)
+		else fun () -> ()
 	
 
 	let rec next_channel_id () =
@@ -363,9 +396,9 @@ module Network: S = struct
 		e' v ()
 	
 	let run e =
-		init ();
+		let callback = init () in
 		let v = e () in
-		close ();
-		v
+			callback ();
+			v
 
 end

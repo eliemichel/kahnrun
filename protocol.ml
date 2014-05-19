@@ -3,31 +3,41 @@ open Utils
 open Format
 
 type header =
-	| Channel_id
+	| In_port
+	| Out_port
 	| Unknown
 	| Error
 	| Ack
 
 let int_of_header = function
-	| Channel_id -> 0
-	| Unknown -> 1
+	| In_port -> 0
+	| Out_port -> 1
 	| Error -> 2
 	| Ack -> 3
+	| Unknown -> 999
+
+let header_of_int = function
+	| 0 -> In_port
+	| 1 -> Out_port
+	| 2 -> Error
+	| 3 -> Ack
+	| _ -> Unknown
 
 
 
-let write0 sock hd =
+
+let confirm sock hd =
 	let cout = out_channel_of_descr sock in
 		output_binary_int cout (int_of_header hd);
 		flush cout
 
-let write1 sock hd value =
+let write sock hd value =
 	let cout = out_channel_of_descr sock in
 		output_binary_int cout (int_of_header hd);
 		output_binary_int cout value;
 		flush cout
 
-let write1line sock hd line =
+let write_line sock hd line =
 	let cout = out_channel_of_descr sock in
 		output_binary_int cout (int_of_header hd);
 		output_line cout line;
@@ -35,11 +45,11 @@ let write1line sock hd line =
 
 
 let error sock err =
-	write1line sock Error err;
+	write_line sock Error err;
 	shutdown sock SHUTDOWN_ALL;
 	printf "Protocole Error: %s@." err
 
-let read0 sock hd =
+let check sock hd =
 	let expected_header = int_of_header hd in
 	let cin = in_channel_of_descr sock in
 	let header = input_binary_int cin in
@@ -48,13 +58,20 @@ let read0 sock hd =
 		else ()
 
 
-let read1 sock hd =
-	read0 sock hd;
+let read sock hd =
+	check sock hd;
+	let cin = in_channel_of_descr sock in
+		input_binary_int cin
+
+let read_int sock =
 	let cin = in_channel_of_descr sock in
 		input_binary_int cin
 
 
+let read_header sock =
+	header_of_int (read_int sock)
 
 
-let ack sock = write0 sock Ack
+
+let ack sock = confirm sock Ack
 
