@@ -1,5 +1,8 @@
+open Params
+open Utils
 open Unix
 open Sys
+open Format
 
 let make_addr serv port =
 	let host = (gethostbyname serv).h_addr_list.(0) in
@@ -218,7 +221,7 @@ module Sock: S = struct
 	
 	let rec new_channel () =
 		let port = 1024 + Random.int 64611 in
-		Format.eprintf "Attempt to create a socket pipe on port %d...@." port;
+		eprintf "Attempt to create a socket pipe on port %d...@." port;
 		try new_channel_addr (make_addr "localhost" port)
 		with _ -> new_channel ()
 
@@ -251,63 +254,98 @@ end
 module Network: S = struct
 	type 'a process = (unit -> 'a)
 	
-	type 'a in_port = in_channel
-	type 'a out_port = out_channel
-	type 'a channel = 'a in_port * 'a out_port
+	type 'a in_port = int
+	type 'a out_port = int
 	
 	let sock = socket PF_INET SOCK_STREAM 0
 	let serv = socket PF_INET SOCK_STREAM 0
+	let local = socket PF_UNIX SOCK_STREAM 0
 	let srvin = out_channel_of_descr sock
 	let srvout = in_channel_of_descr sock
 	let initialized = ref false
-	let peers_in : (Int, file_descr) Hashtbl.t = Hashtbl.create 5
-	let peers_out : (Int, file_descr) Hashtbl.t = Hashtbl.create 5
+	let lut_in : (int, file_descr) Hashtbl.t = Hashtbl.create 5 (* comes into the Node *)
+	let lut_out : (int, file_descr) Hashtbl.t = Hashtbl.create 5 (* goes out of the Node *)
+	let last_channel_id = ref 0
 
 	let handle_in node =
-		let attached_chan = Protocole.read node Protocole.Channel_id in
-			if Hashtbl.mem peers_in attached_chan
+		let attached_chan = Protocole.read1 node Protocole.Channel_id in
+			if Hashtbl.mem lut_in attached_chan
 			then Protocole.error node "Channel already attached"
+			else
+				Hashtbl.add lut_in attached_chan node;
+				Protocole.ack node
 
 	let rec listen_in () =
-		if List.length !nodes < max_nodes
+		if Hashtbl.length lut_in < max_chans
 		then
-			let node, addr = accept sock_serv in
-				Format.eprintf "Node input from %s@." (print_sockaddr addr);
+			let node, addr = accept sock in
+				eprintf "Node input from %s@." (print_sockaddr addr);
 				let th = Thread.create handle_in node in
 					listen_in ();
 					Thread.join th
 
-		else Format.eprintf "Maximum amount of nodes raised: %i@." max_nodes
+		else eprintf "Maximum amount of channels raised: %i@." max_chans
 
 	let init () = 
 		if not !initialized then (
-			Format.eprintf "Waiting for master...@.";
+			eprintf "Waiting for master...@.";
 			let rec try_loop () =
 				try connect sock master_addr
 				with Unix_error (ECONNREFUSED, "connect", "") -> try_loop ()
 			in
 				try_loop ();
-				Format.eprintf "Connection established.@.";
-				Format.eprintf "Starting node server...@.";
-				bind serv master_addr;
-				listen serv max_nodes;
-				Format.eprintf "Node server runing.@.";
+				eprintf "Connection established.@.";
+				eprintf "Starting node server...@.";
+				let rec aux () =
+					let port = random_port () in
+					eprintf "Trying port %d...@." port;
+					(
+						try bind serv (make_addr "localhost" port)
+						with _ -> aux ()
+					)
+				in aux ();
+				listen serv max_chans;
+				eprintf "Node server runing.@.";
+				eprintf "Starting channel manager...@.";
+				bind local (ADDR_UNIX "kahn_node");
+				listen local max_chans;
+				eprintf "Channel manager runing.@.";
 				initialized := true
 		)
 
 	let close () =
-		if !initialized then shutdown sock SHUTDOWN_ALL
+		if !initialized
+		then (
+			shutdown sock SHUTDOWN_ALL;
+			shutdown serv SHUTDOWN_ALL;
+			shutdown local SHUTDOWN_ALL
+		)
 	
+
+	let rec next_channel_id () =
+		incr last_channel_id;
+		if Hashtbl.mem lut_in !last_channel_id || Hashtbl.mem lut_out !last_channel_id
+		then next_channel_id ()
+		else !last_channel_id
 
 	let new_channel () =
 		let o, i = pipe () in
-			in_channel_of_descr o, out_channel_of_descr i
+			let i_id = next_channel_id () in
+			let o_id = next_channel_id () in
+				Hashtbl.add lut_out i_id i;
+				Hashtbl.add lut_in o_id o;
+				o_id, i_id
 	
 	let put v c () =
-		Marshal.to_channel c v []
+		let out_descr = Hashtbl.find lut_out c in
+		let cout = out_channel_of_descr out_descr in
+			Marshal.to_channel cout v []
 	
 	let rec get c () =
-		Marshal.from_channel c
+		let in_descr = Hashtbl.find lut_in c in
+		let cin = in_channel_of_descr in_descr in
+			eprintf "test: %d@." (input_binary_int cin);
+			Marshal.from_channel cin
 	
 	let doco l () =
 		let rec aux pids = function
@@ -324,5 +362,10 @@ module Network: S = struct
 		let v = e () in
 		e' v ()
 	
-	let run e = e ()
+	let run e =
+		init ();
+		let v = e () in
+		close ();
+		v
+
 end
