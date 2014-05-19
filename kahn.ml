@@ -266,6 +266,7 @@ module Network: S = struct
 	let lut_in : (int, file_descr) Hashtbl.t = Hashtbl.create 5 (* comes into the Node *)
 	let lut_out : (int, file_descr) Hashtbl.t = Hashtbl.create 5 (* goes out of the Node *)
 	let last_channel_id = ref 0
+	let local_addr = ref dummy_address
 
 	let handle_in node =
 		let attached_chan = Protocol.read node Protocol.In_port in
@@ -328,12 +329,12 @@ module Network: S = struct
 			let rec aux () =
 				let port = random_port () in
 				eprintf "Trying port %d...@." port;
+				local_addr := make_addr "localhost" port;
 				(
-					try bind local (make_addr "localhost" port)
+					try bind local !local_addr
 					with _ -> aux ()
 				)
-			in
-			let local_addr = aux () in
+			in aux ();
 			listen local max_chans;
 			eprintf "Channel manager runing.@.";
 

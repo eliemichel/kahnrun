@@ -26,3 +26,5 @@ let escape_hyperchan str =
 		ignore (String.index str '!');
 		raise (Invalid_argument "hyperchan should not contain exclamation mark ('!')")
 	with Not_found -> str
+
+let dummy_address = make_addr "localhost" 0
