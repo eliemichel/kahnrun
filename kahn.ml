@@ -259,14 +259,13 @@ module Network: S = struct
 	
 	let sock = socket PF_INET SOCK_STREAM 0
 	let serv = socket PF_INET SOCK_STREAM 0
-	let local = socket PF_INET SOCK_STREAM 0 (* J'ai voulu utiliser une socket UNIX mais sans succès (Invalid argument lors de attach) *)
+	let local = socket PF_UNIX SOCK_STREAM 0
 	let srvin = out_channel_of_descr sock
 	let srvout = in_channel_of_descr sock
 	let initialized = ref false
 	let lut_in : (int, file_descr) Hashtbl.t = Hashtbl.create 5 (* comes into the Node *)
 	let lut_out : (int, file_descr) Hashtbl.t = Hashtbl.create 5 (* goes out of the Node *)
 	let last_channel_id = ref 0
-	let local_addr = ref dummy_address
 
 	let handle_in node =
 		let attached_chan = Protocol.read node Protocol.In_port in
@@ -326,15 +325,8 @@ module Network: S = struct
 			eprintf "Node server runing.@.";
 			
 			eprintf "Starting channel manager...@.";
-			let rec aux () =
-				let port = random_port () in
-				eprintf "Trying port %d...@." port;
-				local_addr := make_addr "localhost" port;
-				(
-					try bind local !local_addr
-					with _ -> aux ()
-				)
-			in aux ();
+			(try unlink local_filename with _ -> ());
+			bind local (ADDR_UNIX local_filename);
 			listen local max_chans;
 			eprintf "Channel manager runing.@.";
 
