@@ -18,6 +18,9 @@ let output_line output line =
 let tee cin =
 	cin (* TODO *)
 
+let random_port () =
+	1024 + Random.int 64611
+
 let escape_hyperchan str =
 	try
 		ignore (String.index str '!');
