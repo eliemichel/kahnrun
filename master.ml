@@ -29,16 +29,12 @@ let run () =
 
 
 	let rec research () =
-		if List.length !nodes < max_nodes
-		then
-			let node, addr = accept sock_serv in
-				Format.eprintf "Node found at %s@." (print_sockaddr addr);
-				nodes := node :: !nodes;
-				let th = Thread.create broadcast node in
-					research ();
-					Thread.join th
-
-		else Format.eprintf "Maximum amount of nodes raised: %i@." max_nodes
+		let node, addr = accept sock_serv in
+			Format.eprintf "Node found at %s@." (print_sockaddr addr);
+			nodes := node :: !nodes;
+			let th = Thread.create broadcast node in
+				research ();
+				Thread.join th
 	in
 
 	research ()

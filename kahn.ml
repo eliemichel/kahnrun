@@ -67,15 +67,12 @@ module Network: S = struct
 	
 	let sock = socket PF_INET SOCK_STREAM 0
 	let serv = socket PF_INET SOCK_STREAM 0
-	let local = socket PF_UNIX SOCK_STREAM 0
 	let srvin = out_channel_of_descr serv
 	let srvout = in_channel_of_descr serv
 	let initialized = ref false
 	let lut_in : (int, file_descr) Hashtbl.t = Hashtbl.create 5 (* comes into the Node *)
 	let lut_out : (int, file_descr) Hashtbl.t = Hashtbl.create 5 (* goes out of the Node *)
 	let last_channel_id = ref 0
-	let main_pipe_o, main_pipe_i = pipe ()
-	let cmanag = out_channel_of_descr main_pipe_i
 
 	let handle_in node =
 		let attached_chan = Protocol.read node Protocol.In_port in
@@ -92,18 +89,6 @@ module Network: S = struct
 				listen_in ();
 				Thread.join th
 
-	let rec channel_manager cin =
-		let (is_in, id, cout) = Marshal.from_channel cin in
-		eprintf "request@.";
-		let lut = if is_in then lut_in else lut_out in
-		let ch =
-			try Hashtbl.find lut id
-			with Not_found -> failwith "Channel not found"
-		in
-			Marshal.to_channel cout ch [];
-			flush cout;
-			channel_manager cin
-
 	let init () =
 		eprintf "Waiting for master...@.";
 		let rec try_loop () =
@@ -113,7 +98,7 @@ module Network: S = struct
 		try_loop ();
 		eprintf "Connection established.@.";
 		
-		eprintf "Starting node server...@.";
+		eprintf "Starting process server...@.";
 		let rec aux () =
 			let port = random_port () in
 			eprintf "Trying port %d...@." port;
@@ -123,17 +108,14 @@ module Network: S = struct
 			)
 		in aux ();
 		listen sock max_chans;
-		eprintf "Node server runing.@.";
+		eprintf "Process server runing.@.";
 		
 		let listen_in_th = Thread.create listen_in () in
-		let channel_manager_th = Thread.create channel_manager (in_channel_of_descr main_pipe_o) in
 		
 		(* let close = *) fun () ->
 		shutdown sock SHUTDOWN_ALL;
 		shutdown serv SHUTDOWN_ALL;
-		shutdown local SHUTDOWN_ALL;
-		Thread.join listen_in_th;
-		Thread.join channel_manager_th
+		Thread.join listen_in_th
 
 	let rec next_channel_id () =
 		incr last_channel_id;
@@ -150,23 +132,14 @@ module Network: S = struct
 				o_id, i_id
 	
 	let put v c () =
-		eprintf "put in %d@." c;
-		let cm_out, cm_in = pipe () in
-		Marshal.to_channel cmanag (false, c, cm_in) [];
-		flush cmanag;
-		let out_descr = Marshal.from_channel (in_channel_of_descr cm_out) in
-		eprintf "test@.";
+		let out_descr = Hashtbl.find lut_out c in
 		let cout = out_channel_of_descr out_descr in
-			Marshal.to_channel cout v []
-	
+			Marshal.to_channel cout v [];
+			flush cout
+
 	let rec get c () =
-		eprintf "get from %d@." c;
-		let cm_out, cm_in = pipe () in
-		Marshal.to_channel cmanag (true, c, cm_in) [];
-		flush cmanag;
-		let in_descr = Marshal.from_channel (in_channel_of_descr cm_out) in
+		let in_descr = Hashtbl.find lut_in c in
 		let cin = in_channel_of_descr in_descr in
-			eprintf "test: %d@." (input_binary_int cin);
 			Marshal.from_channel cin
 	
 	let doco l () =
