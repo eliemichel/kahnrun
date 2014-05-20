@@ -59,198 +59,6 @@ module Lib (K : S) = struct
 end
 
 
-module Th: S = struct
-  type 'a process = (unit -> 'a)
-
-  type 'a channel = { q: 'a Queue.t ; m: Mutex.t; }
-  type 'a in_port = 'a channel
-  type 'a out_port = 'a channel
-
-  let new_channel () =
-    let q = { q = Queue.create (); m = Mutex.create (); } in
-    q, q
-
-  let put v c () =
-    Mutex.lock c.m;
-    Queue.push v c.q;
-    Mutex.unlock c.m;
-    Thread.yield ()
-
-  let rec get c () =
-    try
-      Mutex.lock c.m;
-      let v = Queue.pop c.q in
-      Mutex.unlock c.m;
-      v
-    with Queue.Empty ->
-      Mutex.unlock c.m;
-      Thread.yield ();
-      get c ()
-
-  let doco l () =
-    let ths = List.map (fun f -> Thread.create f ()) l in
-    List.iter (fun th -> Thread.join th) ths
-
-  let return v = (fun () -> v)
-
-  let bind e e' () =
-    let v = e () in
-    Thread.yield ();
-    e' v ()
-
-  let run e = e ()
-end
-
-
-
-module Mono: S = struct
-	let q : (unit -> unit) Queue.t = Queue.create ()
-	exception Delay (* Pour repporter un processus si une fifo est vide *)
-	
-	type 'a process = ('a -> unit) -> unit
-
-	type 'a channel = 'a Queue.t
-	type 'a in_port = 'a channel
-	type 'a out_port = 'a channel
-
-	let new_channel () =
-		let c = Queue.create () in
-			c, c
-	
-	let put a c cb =
-		Queue.push a c;
-		cb ()
-	
-	let rec get c cb =
-		try cb (Queue.pop c)
-		with Queue.Empty ->
-			Queue.push (fun () -> get c cb) q (* On procrastine… *)
-	
-	let doco l =
-		(* À cause de `get` on ne peut se contenter d'ajouter `cb` à `q`
-			après les éléments de `l` *)
-		let n = List.length l in
-		fun cb ->
-			let k = ref 0 in
-			let aux () =
-				incr k;
-				if !k = n (* Si tous les processi de la liste ont été exécuté *)
-				then cb ()
-			in
-			List.iter (fun p -> Queue.push (fun () -> p aux) q) l
-	
-	
-	let return a =
-		fun cb -> Queue.push (fun () -> cb a) q
-
-	let bind p f =
-			fun cb ->
-				let e () = p (fun a -> f a cb) in
-					Queue.push e q
-
-	let run p =
-		let r = ref None in
-		let cb = fun a -> r := Some a in
-		let e () = p cb in
-			Queue.push e q;
-			while not (Queue.is_empty q) do
-				Queue.pop q ()
-			done;
-			match !r with
-				| None -> assert false
-				| Some a -> a
-end
-
-
-
-
-
-
-module Proc: S = struct
-	type 'a process = (unit -> 'a)
-	
-	type 'a in_port = in_channel
-	type 'a out_port = out_channel
-	type 'a channel = 'a in_port * 'a out_port
-	
-	let new_channel () =
-		let o, i = pipe () in
-			in_channel_of_descr o, out_channel_of_descr i
-	
-	let put v c () =
-		Marshal.to_channel c v []
-	
-	let rec get c () =
-		Marshal.from_channel c
-	
-	let doco l () =
-		let rec aux pids = function
-			| [] -> List.iter (fun pid -> ignore (waitpid [] pid)) pids
-			| f :: q ->
-				match fork () with
-				| 0 -> f ()
-				| pid -> aux (pid :: pids) q
-		in aux [] l
-	
-	let return v = (fun () -> v)
-	
-	let bind e e' () =
-		let v = e () in
-		e' v ()
-	
-	let run e = e ()
-end
-
-
-module Sock: S = struct
-	type 'a process = (unit -> 'a)
-	
-	type 'a in_port = in_channel
-	type 'a out_port = out_channel
-	type 'a channel = 'a in_port * 'a out_port
-
-	let new_channel_addr addr =
-		let sock_in = socket PF_INET SOCK_STREAM 0 in
-		let sock_serv = socket PF_INET SOCK_STREAM 0 in
-			bind sock_serv addr;
-			listen sock_serv 1;
-			connect sock_in addr;
-			let sock_out, _ = accept sock_serv in
-		
-			in_channel_of_descr sock_in, out_channel_of_descr sock_out
-	
-	let rec new_channel () =
-		let port = 1024 + Random.int 64611 in
-		eprintf "Attempt to create a socket pipe on port %d...@." port;
-		try new_channel_addr (make_addr "localhost" port)
-		with _ -> new_channel ()
-
-	let put v c () =
-		Marshal.to_channel c v []
-	
-	let rec get c () =
-		Marshal.from_channel c
-	
-	let doco l () =
-		let rec aux pids = function
-			| [] -> List.iter (fun pid -> ignore (waitpid [] pid)) pids
-			| f :: q ->
-				match fork () with
-				| 0 -> f ()
-				| pid -> aux (pid :: pids) q
-		in aux [] l
-	
-	let return v = (fun () -> v)
-	
-	let bind e e' () =
-		let v = e () in
-		e' v ()
-	
-	let run e = e ()
-end
-
-
-
 module Network: S = struct
 	type 'a process = (unit -> 'a)
 	
@@ -260,12 +68,14 @@ module Network: S = struct
 	let sock = socket PF_INET SOCK_STREAM 0
 	let serv = socket PF_INET SOCK_STREAM 0
 	let local = socket PF_UNIX SOCK_STREAM 0
-	let srvin = out_channel_of_descr sock
-	let srvout = in_channel_of_descr sock
+	let srvin = out_channel_of_descr serv
+	let srvout = in_channel_of_descr serv
 	let initialized = ref false
 	let lut_in : (int, file_descr) Hashtbl.t = Hashtbl.create 5 (* comes into the Node *)
 	let lut_out : (int, file_descr) Hashtbl.t = Hashtbl.create 5 (* goes out of the Node *)
 	let last_channel_id = ref 0
+	let main_pipe_o, main_pipe_i = pipe ()
+	let cmanag = out_channel_of_descr main_pipe_i
 
 	let handle_in node =
 		let attached_chan = Protocol.read node Protocol.In_port in
@@ -282,71 +92,48 @@ module Network: S = struct
 				listen_in ();
 				Thread.join th
 
-	let handle_channel_request req =
-		match Protocol.read_header req with
-			| Protocol.In_port ->
-				let id = Protocol.read_int req in (
-					try Marshal.to_channel (out_channel_of_descr req) (Hashtbl.find lut_in id) []
-					with Not_found -> Protocol.error req "In port not found"
-				)
-			| Protocol.Out_port ->
-				let id = Protocol.read_int req in (
-					try Marshal.to_channel (out_channel_of_descr req) (Hashtbl.find lut_in id) []
-					with Not_found -> Protocol.error req "Out port not found"
-				)
-			| _ -> Protocol.error req "Port type expected"
+	let rec channel_manager cin =
+		let (is_in, id, cout) = Marshal.from_channel cin in
+		eprintf "request@.";
+		let lut = if is_in then lut_in else lut_out in
+		let ch =
+			try Hashtbl.find lut id
+			with Not_found -> failwith "Channel not found"
+		in
+			Marshal.to_channel cout ch [];
+			flush cout;
+			channel_manager cin
 
-	let rec channel_manager () =
-		let req, _ = accept local in
-			let th = Thread.create handle_channel_request req in
-				channel_manager ();
-				Thread.join th
-
-	let init () = 
-		if not !initialized then (
-			eprintf "Waiting for master...@.";
-			let rec try_loop () =
-				try connect sock master_addr
-				with Unix_error (ECONNREFUSED, "connect", "") -> try_loop ()
-			in
-			try_loop ();
-			eprintf "Connection established.@.";
-			
-			eprintf "Starting node server...@.";
-			let rec aux () =
-				let port = random_port () in
-				eprintf "Trying port %d...@." port;
-				(
-					try bind serv (make_addr "localhost" port)
-					with _ -> aux ()
-				)
-			in aux ();
-			listen serv max_chans;
-			eprintf "Node server runing.@.";
-			
-			eprintf "Starting channel manager...@.";
-			(try unlink local_filename with _ -> ());
-			bind local (ADDR_UNIX local_filename);
-			listen local max_chans;
-			eprintf "Channel manager runing.@.";
-
-			let listen_in_th = Thread.create listen_in () in
-			let channel_manager_th = Thread.create channel_manager () in
-			initialized := true;
-
-			(* let close = *) fun () ->
-			if !initialized
-			then (
-				shutdown sock SHUTDOWN_ALL;
-				shutdown serv SHUTDOWN_ALL;
-				shutdown local SHUTDOWN_ALL;
-				Thread.join listen_in_th;
-				Thread.join channel_manager_th
-			)
+	let init () =
+		eprintf "Waiting for master...@.";
+		let rec try_loop () =
+			try connect serv master_addr
+			with Unix_error (ECONNREFUSED, "connect", "") -> try_loop ()
+		in
+		try_loop ();
+		eprintf "Connection established.@.";
 		
-		)
-		else fun () -> ()
-	
+		eprintf "Starting node server...@.";
+		let rec aux () =
+			let port = random_port () in
+			eprintf "Trying port %d...@." port;
+			(
+				try bind sock (make_addr "localhost" port)
+				with _ -> aux ()
+			)
+		in aux ();
+		listen sock max_chans;
+		eprintf "Node server runing.@.";
+		
+		let listen_in_th = Thread.create listen_in () in
+		let channel_manager_th = Thread.create channel_manager (in_channel_of_descr main_pipe_o) in
+		
+		(* let close = *) fun () ->
+		shutdown sock SHUTDOWN_ALL;
+		shutdown serv SHUTDOWN_ALL;
+		shutdown local SHUTDOWN_ALL;
+		Thread.join listen_in_th;
+		Thread.join channel_manager_th
 
 	let rec next_channel_id () =
 		incr last_channel_id;
@@ -363,12 +150,21 @@ module Network: S = struct
 				o_id, i_id
 	
 	let put v c () =
-		let out_descr = Hashtbl.find lut_out c in
+		eprintf "put in %d@." c;
+		let cm_out, cm_in = pipe () in
+		Marshal.to_channel cmanag (false, c, cm_in) [];
+		flush cmanag;
+		let out_descr = Marshal.from_channel (in_channel_of_descr cm_out) in
+		eprintf "test@.";
 		let cout = out_channel_of_descr out_descr in
 			Marshal.to_channel cout v []
 	
 	let rec get c () =
-		let in_descr = Hashtbl.find lut_in c in
+		eprintf "get from %d@." c;
+		let cm_out, cm_in = pipe () in
+		Marshal.to_channel cmanag (true, c, cm_in) [];
+		flush cmanag;
+		let in_descr = Marshal.from_channel (in_channel_of_descr cm_out) in
 		let cin = in_channel_of_descr in_descr in
 			eprintf "test: %d@." (input_binary_int cin);
 			Marshal.from_channel cin

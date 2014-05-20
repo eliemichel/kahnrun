@@ -13,6 +13,8 @@ handcut:
 	$(OCAMLBUILD) handcut_slave2.$(TARGET)
 	$(OCAMLBUILD) handcut_slave3.$(TARGET)
 
+test:
+	$(OCAMLBUILD) test.$(TARGET)
 
 clean:
 	$(OCAMLBUILD) -clean
