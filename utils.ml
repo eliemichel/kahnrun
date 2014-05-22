@@ -15,8 +15,8 @@ let output_line output line =
 	output_string output "\n";
 	flush output
 
-let tee cin =
-	cin (* TODO *)
+let pause delay =
+	try ignore(select [] [] [] delay) with _ -> ()
 
 let random_port () =
 	1024 + Random.int 64611
@@ -28,3 +28,5 @@ let escape_hyperchan str =
 	with Not_found -> str
 
 let dummy_address = make_addr "localhost" 0
+
+let implemented = true
