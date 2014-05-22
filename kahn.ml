@@ -61,7 +61,8 @@ end
 
 module Network: S = struct
 	type env = {
-		addr : sockaddr
+		addr : sockaddr;
+		id   : int
 	}
 	type 'a process = (env -> 'a)
 
@@ -80,23 +81,30 @@ module Network: S = struct
 	let wait_ack cin =
 		while Marshal.from_channel cin <> Ack do () done
 
+	let send_ack cout =
+		Marshal.to_channel cout Ack [];
+		flush cout
+
 	let send_wait srvin srvout channel callback packet =
+		(* eprintf "Wait for %d@." channel; *)
 		Marshal.to_channel srvin (Wait channel) [];
 		flush srvin;
-		wait_ack srvout;
-		eprintf "Delay for %d@." channel;
+		(* eprintf "Delay for %d@." channel; *)
 		Utils.pause wait_delay;
 		callback packet
 
 	let spawn pids local_addr process =
 		match fork () with
 		| 0 -> (
+			let id = Random.int 99999 in
+			eprintf "Start process %d@." id;
 			process {
-				addr = local_addr
+				addr = local_addr;
+				id = id
 			};
 			exit 0
 			)
-		| pid -> pids := pid :: !pids
+		| pid -> pids := pid :: !pids;eprintf "TEST@."
 
 	let handle_all srvin srvout pids local_addr lut node =
 		let cin  = in_channel_of_descr node in
@@ -104,23 +112,29 @@ module Network: S = struct
 		let rec aux = function
 			| Send (channel, force, flags, data) as packet -> (
 				try
+					(* eprintf "Attempt to find %d@." channel; *)
 					let dest = out_channel_of_descr (Hashtbl.find lut channel) in
+						eprintf "Found.@.";
 						Hashtbl.remove lut channel;
 						Marshal.to_channel dest packet flags;
 						flush dest;
-						Marshal.to_channel cout Ack [];
-						flush cout;
-				with Not_found ->
+						send_ack cout;
+				with Not_found -> (
+					(* eprintf "Not found.@."; *)
 					if force then send_wait srvin srvout channel aux packet
+					)
 				)
 			| Listen channel ->
+				eprintf "Listen at %d@." channel;
 				Hashtbl.add lut channel node;
 				Marshal.to_channel cout Ack [];
 				flush cout
 			| Wait channel ->
 				if Hashtbl.mem lut channel
 				then (Marshal.to_channel cout Ack []; flush cout)
-			| Spawn process -> spawn pids local_addr process
+			| Spawn process ->
+				spawn pids local_addr process;
+				send_ack cout
 			| Ask -> assert (not implemented)
 			| Alloc (a, b) -> assert (not implemented)
 			| Ack -> ()
@@ -188,7 +202,7 @@ module Network: S = struct
 		let th_local = Thread.create accepter (interface_local, handler) in
 		eprintf "Node running.@.";
 
-		{ addr = local_addr },
+		{ addr = local_addr ; id = 0 },
 		fun () ->
 		Thread.join th_inet;
 		Thread.join th_local;
@@ -205,17 +219,23 @@ module Network: S = struct
 			chan, chan
 	
 	let put v c env =
+		eprintf "-- put on %d@." c;
 		let sock = socket PF_UNIX SOCK_STREAM 0 in
 		let cout = out_channel_of_descr sock in
 		let cin = in_channel_of_descr sock in
 		let packet = Send (c, true, [Marshal.Closures], Marshal.to_string v [Marshal.Closures]) in
+			eprintf "connect...@.";
 			connect sock env.addr;
+			eprintf "send...@.";
 			Marshal.to_channel cout packet [];
 			flush cout;
-			wait_ack cin
+			eprintf "wait ack...@.";
+			wait_ack cin;
+			eprintf "Done.@."
 
 
 	let rec get c env =
+		eprintf "-- get from %d@." c;
 		let sock = socket PF_UNIX SOCK_STREAM 0 in
 		let cout = out_channel_of_descr sock in
 		let cin = in_channel_of_descr sock in
@@ -226,22 +246,24 @@ module Network: S = struct
 			Marshal.from_channel cin
 	
 	let doco l env =
+		eprintf "-- doco @@%d@." env.id;
 		let sock = socket PF_UNIX SOCK_STREAM 0 in
 		let cout = out_channel_of_descr sock in
 		let cin = in_channel_of_descr sock in
 			connect sock env.addr;
-			let rec aux pids = function
-				| [] -> List.iter (fun pid -> ignore (waitpid [] pid)) pids
-				| f :: q -> (
-					Marshal.to_channel cout (Spawn f) [Marshal.Closures];
-					flush cout;
-					wait_ack cin
-					)
-			in aux [] l
+			List.iter (fun process ->
+				eprintf "* Spawn a new process@.";
+				Marshal.to_channel cout (Spawn process) [Marshal.Closures];
+				flush cout;
+				eprintf "* Sent@.";
+				wait_ack cin;
+				eprintf "* Acked@."
+			) l
 	
 	let return v = (fun env -> v)
 	
 	let bind e e' env =
+		eprintf "-- bind @@%d@." env.id;
 		let v = e env in
 		e' v env
 	
