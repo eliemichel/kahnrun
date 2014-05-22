@@ -1,77 +1,66 @@
 open Unix
 open Utils
+open Params
 open Format
 
-type header =
-	| In_port
-	| Out_port
-	| Unknown
-	| Error
-	| Ack
-
-let int_of_header = function
-	| In_port -> 0
-	| Out_port -> 1
-	| Error -> 2
-	| Ack -> 3
-	| Unknown -> 999
-
-let header_of_int = function
-	| 0 -> In_port
-	| 1 -> Out_port
-	| 2 -> Error
-	| 3 -> Ack
-	| _ -> Unknown
+type packet =
+| Send of int * string (* int: channel id ; string: serialized data *)
+| Listen of int (* Listen to incoming packet on a given channel id — 0 for unspecified *)
+| Wait of int (* Wait for someone who listen *)
+| Ask (* Ask for free channel ids *)
+| Alloc of int * int (* Allocate a range of channel ids *)
 
 
 
+let handle_inet node =
+	()
 
-let confirm sock hd =
-	let cout = out_channel_of_descr sock in
-		output_binary_int cout (int_of_header hd);
-		flush cout
-
-let write sock hd value =
-	let cout = out_channel_of_descr sock in
-		output_binary_int cout (int_of_header hd);
-		output_binary_int cout value;
-		flush cout
-
-let write_line sock hd line =
-	let cout = out_channel_of_descr sock in
-		output_binary_int cout (int_of_header hd);
-		output_line cout line;
-		flush cout
+let rec accepter (sock, handler) =
+	let node, addr = accept sock in
+		eprintf "Node input from %s@." (print_sockaddr addr);
+		let th = Thread.create handler node in
+			accepter (sock, handler);
+			Thread.join th
 
 
-let error sock err =
-	write_line sock Error err;
-	shutdown sock SHUTDOWN_ALL;
-	printf "Protocole Error: %s@." err
+let router () =
+	eprintf "Starting router...@.";
+	let lut : (int, file_descr) Hashtbl.t = Hashtbl.create 17 in
 
-let check sock hd =
-	let expected_header = int_of_header hd in
-	let cin = in_channel_of_descr sock in
-	let header = input_binary_int cin in
-		if header != expected_header
-		then error sock (sprintf "Wrong header: %d received but %d expected" header expected_header)
-		else ()
-
-
-let read sock hd =
-	check sock hd;
-	let cin = in_channel_of_descr sock in
-		input_binary_int cin
-
-let read_int sock =
-	let cin = in_channel_of_descr sock in
-		input_binary_int cin
+	let interface_inet = sock PF_INET SOCK_STREAM 0 in
+	eprintf "Starting inet interface...@.";
+	let rec aux () =
+		let port = random_port () in
+		eprintf "Trying port %d...@." port;
+		(
+			try bind interface_inet (make_addr "localhost" port)
+			with _ -> aux ()
+		)
+	in aux ();
+	listen interface_inet max_chans;
+	eprintf "Inet interface runing.@.";
 
 
-let read_header sock =
-	header_of_int (read_int sock)
+	let interface_local	= sock PF_UNIX SOCK_STREAM 0 in
+	eprintf "Starting local interface...@.";
+	let rec aux i =
+		let path = sprintf "/tmp/kahn%d" i in
+		eprintf "Trying path %s...@." path;
+		(
+			try bind interface_local (ADDR_UNIX path)
+			with _ -> aux ()
+		)
+	in aux 0;
+	listen interface_local max_chans;
+	eprintf "Local interface runing.@.";
 
 
+	let th_inet = Thread.create accepter (interface_inet, handle_inet) in
+	let th_inet = Thread.create accepter (interface_local, handle_local) in
+	eprintf "Router running.@.";
+	Thread.join th_inet;
+	Thread.join th_local;
 
-let ack sock = confirm sock Ack
+	eprintf "Router stoped.@."
+
 
