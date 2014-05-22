@@ -69,23 +69,23 @@ module Network: S = struct
 	type 'a out_port = int
 
 	type packet =
-	| Send of int * bool * Marshal.extern_flags list * string (* int: channel id ; bool: force forwarding ; string: serialized data *)
+	| Send of (int * bool * Marshal.extern_flags list * string) (* int: channel id ; bool: force forwarding ; string: serialized data *)
 	| Listen of int (* Listen to incoming packet on a given channel id — 0 for unspecified *)
 	| Wait of int (* Wait for someone who listen *)
 	| Ask (* Ask for free channel ids *)
 	| Spawn of unit process
-	| Alloc of int * int (* Allocate a range of channel ids *)
+	| Alloc of (int * int) (* Allocate a range of channel ids *)
 	| Ack (* Acknowledgment *)
 
 	let wait_ack cin =
 		while Marshal.from_channel cin <> Ack do () done
 
-	let send_wait srvin srvout channel packet callback =
-		Marshal.to_channel srvin (Wait channel);
+	let send_wait srvin srvout channel callback packet =
+		Marshal.to_channel srvin (Wait channel) [];
 		flush srvin;
 		wait_ack srvout;
 		eprintf "Delay for %d@." channel;
-		pause wait_delay;
+		Utils.pause wait_delay;
 		callback packet
 
 	let spawn pids local_addr process =
@@ -101,8 +101,8 @@ module Network: S = struct
 	let handle_all srvin srvout pids local_addr lut node =
 		let cin  = in_channel_of_descr node in
 		let cout  = out_channel_of_descr node in
-		let aux = function
-			| Send ((channel, force, flags, data) as packet) -> (
+		let rec aux = function
+			| Send (channel, force, flags, data) as packet -> (
 				try
 					let dest = out_channel_of_descr (Hashtbl.find lut channel) in
 						Hashtbl.remove lut channel;
@@ -111,18 +111,19 @@ module Network: S = struct
 						Marshal.to_channel cout Ack [];
 						flush cout;
 				with Not_found ->
-					if force then send_wait srvin srvout channel packet aux
+					if force then send_wait srvin srvout channel aux packet
 				)
 			| Listen channel ->
 				Hashtbl.add lut channel node;
 				Marshal.to_channel cout Ack [];
-				fluch cout
+				flush cout
 			| Wait channel ->
 				if Hashtbl.mem lut channel
-				then (Marshal.to_channel cout Ack []; fluch cout)
+				then (Marshal.to_channel cout Ack []; flush cout)
 			| Spawn process -> spawn pids local_addr process
 			| Ask -> assert (not implemented)
 			| Alloc (a, b) -> assert (not implemented)
+			| Ack -> ()
 		in
 			aux (Marshal.from_channel cin)
 
@@ -151,7 +152,7 @@ module Network: S = struct
 		try_loop ();
 		eprintf "Connection established.@.";
 
-		let interface_inet = sock PF_INET SOCK_STREAM 0 in
+		let interface_inet = socket PF_INET SOCK_STREAM 0 in
 		eprintf "Starting inet interface...@.";
 		let rec aux () =
 			let port = random_port () in
@@ -165,16 +166,18 @@ module Network: S = struct
 		eprintf "Inet interface runing.@.";
 
 
-		let interface_local	= sock PF_UNIX SOCK_STREAM 0 in
+		let interface_local	= socket PF_UNIX SOCK_STREAM 0 in
 		eprintf "Starting local interface...@.";
 		let rec aux i =
 			let path = sprintf "%s%d" local_base_filename i in
 			eprintf "Trying path %s...@." path;
 			(
-				try bind interface_local (ADDR_UNIX path)
-				with _ -> aux ()
-			);
-			ADDR_UNIX path
+				try
+					let addr = ADDR_UNIX path in
+						bind interface_local addr;
+						addr
+				with _ -> aux (i + 1)
+			)
 		in
 		let local_addr = aux 0 in
 		listen interface_local max_chans;
@@ -182,9 +185,10 @@ module Network: S = struct
 
 		let handler = handle_all srvin srvout pids local_addr lut in
 		let th_inet = Thread.create accepter (interface_inet, handler) in
-		let th_inet = Thread.create accepter (interface_local, handler) in
+		let th_local = Thread.create accepter (interface_local, handler) in
 		eprintf "Node running.@.";
 
+		{ addr = local_addr },
 		fun () ->
 		Thread.join th_inet;
 		Thread.join th_local;
@@ -196,51 +200,15 @@ module Network: S = struct
 
 		eprintf "Node stoped.@."
 
-
-
-	let init () =
-		eprintf "Waiting for master...@.";
-		let rec try_loop () =
-			try connect serv master_addr
-			with Unix_error (ECONNREFUSED, "connect", "") -> try_loop ()
-		in
-		try_loop ();
-		eprintf "Connection established.@.";
-		
-		eprintf "Starting process server...@.";
-		let rec aux () =
-			let port = random_port () in
-			eprintf "Trying port %d...@." port;
-			(
-				try bind sock (make_addr "localhost" port)
-				with _ -> aux ()
-			)
-		in aux ();
-		listen sock max_chans;
-		eprintf "Process server runing.@.";
-		
-		let listen_in_th = Thread.create listen_in () in
-		
-		(* let close = *) fun () ->
-		shutdown sock SHUTDOWN_ALL;
-		shutdown serv SHUTDOWN_ALL;
-		Thread.join listen_in_th
-
-	let rec next_channel_id () =
-		incr last_channel_id;
-		if Hashtbl.mem lut_in !last_channel_id || Hashtbl.mem lut_out !last_channel_id
-		then next_channel_id ()
-		else !last_channel_id
-
 	let new_channel () =
-		let chan = Random.int max_int in
+		let chan = Random.int 99999 in
 			chan, chan
 	
 	let put v c env =
 		let sock = socket PF_UNIX SOCK_STREAM 0 in
 		let cout = out_channel_of_descr sock in
 		let cin = in_channel_of_descr sock in
-		let packet = Send (c, true, [Marshal.Closures], Marshal.to_string v 0 [Marshal.Closures]) in
+		let packet = Send (c, true, [Marshal.Closures], Marshal.to_string v [Marshal.Closures]) in
 			connect sock env.addr;
 			Marshal.to_channel cout packet [];
 			flush cout;
@@ -274,12 +242,12 @@ module Network: S = struct
 	let return v = (fun env -> v)
 	
 	let bind e e' env =
-		let v = e () in
-		e' v ()
+		let v = e env in
+		e' v env
 	
 	let run e =
-		let callback = init () in
-		let v = e () in
+		let env, callback = init () in
+		let v = e env in
 			callback ();
 			v
 
