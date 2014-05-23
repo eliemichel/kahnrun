@@ -70,12 +70,12 @@ module Network: S = struct
 	type 'a out_port = int
 
 	type packet =
-		| Send of (int * bool * Marshal.extern_flags list * string)
+		| Send of (int * bool * string)
 		(* int: channel id ; bool: force forwarding ; string: serialized data *)
 		| Listen of int (* Listen to incoming packet on a given channel id — 0 for unspecified *)
 		| Wait of int (* Wait for someone who listen *)
 		| Ask (* Ask for free channel ids *)
-		| Spawn of unit process
+		| Spawn of (int * unit process)
 		| Alloc of (int * int) (* Allocate a range of channel ids *)
 		| Ack (* Acknowledgment *)
 
@@ -94,16 +94,91 @@ module Network: S = struct
 		Utils.pause wait_delay;
 		callback packet
 
-	let spawn pids local_addr process =
+
+	let new_channel () =
+		let chan = Random.int 99999 in
+			chan, chan
+	
+	let put v c env =
+		eprintf "-- put on %d@." c;
+		let sock = socket PF_UNIX SOCK_STREAM 0 in
+		let cout = out_channel_of_descr sock in
+		let cin = in_channel_of_descr sock in
+		let packet = Send (c, true, Marshal.to_string v [Marshal.Closures]) in
+			eprintf "connect...@.";
+			connect sock env.addr;
+			eprintf "send...@.";
+			Marshal.to_channel cout packet [];
+			flush cout;
+			eprintf "wait ack...@.";
+			wait_ack cin;
+			shutdown sock SHUTDOWN_ALL;
+			eprintf "Done.@."
+
+	let rec get c env =
+		eprintf "-- get from %d@." c;
+		let sock = socket PF_UNIX SOCK_STREAM 0 in
+		let cout = out_channel_of_descr sock in
+		let cin = in_channel_of_descr sock in
+			connect sock env.addr;
+			Marshal.to_channel cout (Listen c) [];
+			flush cout;
+			wait_ack cin;
+			let v = match Marshal.from_channel cin with
+				| Send (channel, force, data) ->
+					Marshal.from_string data 0
+				| _ -> assert false
+			in
+				shutdown sock SHUTDOWN_ALL;
+				v
+	
+	let doco l env =
+		eprintf "-- doco @@%d@." env.id;
+		let sock = socket PF_UNIX SOCK_STREAM 0 in
+		let cout = out_channel_of_descr sock in
+		let cin = in_channel_of_descr sock in
+			connect sock env.addr;
+			List.iter (fun process ->
+				eprintf "* Spawn a new process@.";
+				let c, _ = new_channel () in
+				Marshal.to_channel cout (Spawn (c, process)) [Marshal.Closures];
+				flush cout;
+				eprintf "* Sent@.";
+				wait_ack cin;
+				eprintf "* Acked@."
+			) l;
+			List.iter (fun _ ->
+				eprintf "* Wait for process end@.";
+				match Marshal.from_channel cin with
+				| Send _ -> ()
+				| _ -> assert false
+			) l
+
+	
+	let return v env =
+		eprintf "-- return @@%d@." env.id;
+		v
+	
+	let bind e e' env =
+		eprintf "-- bind @@%d@." env.id;
+		let v = e env in
+		e' v env
+
+	(* ===== Init dependencies =====*)
+
+	let spawn pids local_addr channel process =
 		match fork () with
 		| 0 -> (
 			let id = Random.int 99999 in
 			eprintf "Start process %d@." id;
-			process {
+			let env = {
 				addr = local_addr;
 				id = id
-			};
+				}
+			in
+			let v = process env in
 			eprintf "End of %d@." id;
+			put v channel env;
 			exit 0
 			)
 		| pid -> pids := pid :: !pids;eprintf "TEST@."
@@ -111,14 +186,18 @@ module Network: S = struct
 	let handle_all srvin srvout pids local_addr lut node =
 		let cin  = in_channel_of_descr node in
 		let cout  = out_channel_of_descr node in
+		let listen_to channel =
+			Hashtbl.add lut channel node
+			(* XXX broadcast *)
+		in
 		let rec aux = function
-			| Send (channel, force, flags, data) as packet -> (
+			| Send (channel, force, data) as packet -> (
 				try
 					eprintf "Attempt to find %d@." channel;
 					let dest = out_channel_of_descr (Hashtbl.find lut channel) in
 						eprintf "Found.@.";
 						Hashtbl.remove lut channel;
-						Marshal.to_channel dest packet flags;
+						Marshal.to_channel dest packet [];
 						flush dest;
 						send_ack cout;
 				with Not_found -> (
@@ -128,15 +207,15 @@ module Network: S = struct
 				)
 			| Listen channel ->
 				eprintf "Listen at %d@." channel;
-				Hashtbl.add lut channel node;
-				Marshal.to_channel cout Ack [];
-				flush cout
+				listen_to channel;
+				send_ack cout
 			| Wait channel ->
 				if Hashtbl.mem lut channel
-				then (Marshal.to_channel cout Ack []; flush cout)
-			| Spawn process ->
+				then send_ack cout
+			| Spawn (channel, process) ->
 				eprintf "Will spawn !@.";
-				spawn pids local_addr process;
+				listen_to channel;
+				spawn pids local_addr channel 	process;
 				send_ack cout
 			| Ask -> assert (not implemented)
 			| Alloc (a, b) -> assert (not implemented)
@@ -179,7 +258,7 @@ module Network: S = struct
 			let port = random_port () in
 			eprintf "Trying port %d...@." port;
 			(
-				try bind interface_inet (make_addr "localhost" port)
+				try Unix.bind interface_inet (make_addr "localhost" port)
 				with _ -> aux ()
 			)
 		in aux ();
@@ -195,7 +274,7 @@ module Network: S = struct
 			(
 				try
 					let addr = ADDR_UNIX path in
-						bind interface_local addr;
+						Unix.bind interface_local addr;
 						addr
 				with _ -> aux (i + 1)
 			)
@@ -206,6 +285,7 @@ module Network: S = struct
 
 		let handler = handle_all srvin srvout pids local_addr lut in
 		let th_inet = Thread.create accepter (interface_inet, handler) in
+		let th_local = Thread.create accepter (interface_local, handler) in
 		let th_local = Thread.create accepter (interface_local, handler) in
 		eprintf "Node running.@.";
 
@@ -220,67 +300,6 @@ module Network: S = struct
 		shutdown interface_local SHUTDOWN_ALL;
 
 		eprintf "Node stoped.@."
-
-	let new_channel () =
-		let chan = Random.int 99999 in
-			chan, chan
-	
-	let put v c env =
-		eprintf "-- put on %d@." c;
-		let sock = socket PF_UNIX SOCK_STREAM 0 in
-		let cout = out_channel_of_descr sock in
-		let cin = in_channel_of_descr sock in
-		let packet = Send (c, true, [Marshal.Closures], Marshal.to_string v [Marshal.Closures]) in
-			eprintf "connect...@.";
-			connect sock env.addr;
-			eprintf "send...@.";
-			Marshal.to_channel cout packet [];
-			flush cout;
-			eprintf "wait ack...@.";
-			wait_ack cin;
-			shutdown sock SHUTDOWN_ALL;
-			eprintf "Done.@."
-
-	let rec get c env =
-		eprintf "-- get from %d@." c;
-		let sock = socket PF_UNIX SOCK_STREAM 0 in
-		let cout = out_channel_of_descr sock in
-		let cin = in_channel_of_descr sock in
-			connect sock env.addr;
-			Marshal.to_channel cout (Listen c) [];
-			flush cout;
-			wait_ack cin;
-			let v = match Marshal.from_channel cin with
-				| Send (channel, force, flags, data) ->
-					Marshal.from_string data 0
-				| _ -> assert false
-			in
-				shutdown sock SHUTDOWN_ALL;
-				v
-	
-	let doco l env =
-		eprintf "-- doco @@%d@." env.id;
-		let sock = socket PF_UNIX SOCK_STREAM 0 in
-		let cout = out_channel_of_descr sock in
-		let cin = in_channel_of_descr sock in
-			connect sock env.addr;
-			List.iter (fun process ->
-				eprintf "* Spawn a new process@.";
-				Marshal.to_channel cout (Spawn process) [Marshal.Closures];
-				flush cout;
-				eprintf "* Sent@.";
-				wait_ack cin;
-				eprintf "* Acked@."
-			) l
-	
-	let return v env =
-		(* eprintf "-- return @@%d@." env.id; *)
-		v
-	
-	let bind e e' env =
-		eprintf "-- bind @@%d@." env.id;
-		let v = e env in
-		e' v env
 	
 	let run e =
 		let env, callback = init () in
