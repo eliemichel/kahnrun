@@ -236,7 +236,7 @@ module Network: S = struct
 				accepter (sock, handler);
 				Thread.join th
 
-	let init () =
+	let run process =
 		eprintf "Starting node...@.";
 		let lut : (int, file_descr) Hashtbl.t = Hashtbl.create 17 in
 		let pids = ref [] in
@@ -289,8 +289,22 @@ module Network: S = struct
 		let th_local = Thread.create accepter (interface_local, handler) in
 		eprintf "Node running.@.";
 
-		{ addr = local_addr ; id = 0 },
-		fun () ->
+
+		eprintf "Launch root process.@.";
+		let sock_root = socket PF_UNIX SOCK_STREAM 0 in
+		let cout = out_channel_of_descr sock_root in
+		let cin = in_channel_of_descr sock_root in
+		let c, _ = new_channel () in
+		connect sock_root local_addr;
+		Marshal.to_channel cout (Spawn (c, process)) [Marshal.Closures];
+		flush cout;
+		wait_ack cin;
+		eprintf "Wait for root process end@.";
+		let v = match Marshal.from_channel cin with
+			| Send (_, _, str) -> Marshal.from_string str
+			| _ -> assert false
+		in
+
 		Thread.join th_inet;
 		Thread.join th_local;
 		List.iter (fun pid -> ignore (waitpid [] pid)) !pids;
@@ -298,13 +312,6 @@ module Network: S = struct
 		shutdown serv SHUTDOWN_ALL;
 		shutdown interface_inet SHUTDOWN_ALL;
 		shutdown interface_local SHUTDOWN_ALL;
-
-		eprintf "Node stoped.@."
-	
-	let run e =
-		let env, callback = init () in
-		let v = e env in
-			callback ();
-			v
+		v
 
 end
