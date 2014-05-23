@@ -75,7 +75,7 @@ module Network: S = struct
 		| Listen of int (* Listen to incoming packet on a given channel id — 0 for unspecified *)
 		| Wait of int (* Wait for someone who listen *)
 		| Ask (* Ask for free channel ids *)
-		| Spawn of (int * unit process)
+		| Spawn of (int * string)
 		| Alloc of (int * int) (* Allocate a range of channel ids *)
 		| Ack (* Acknowledgment *)
 
@@ -139,9 +139,10 @@ module Network: S = struct
 		let cin = in_channel_of_descr sock in
 			connect sock env.addr;
 			List.iter (fun process ->
-				eprintf "* Spawn a new process@.";
 				let c, _ = new_channel () in
-				Marshal.to_channel cout (Spawn (c, process)) [Marshal.Closures];
+				let process_str = Marshal.to_string process [Marshal.Closures] in
+				eprintf "* Spawn a new process@.";
+				Marshal.to_channel cout (Spawn (c, process_str)) [];
 				flush cout;
 				eprintf "* Sent@.";
 				wait_ack cin;
@@ -212,10 +213,11 @@ module Network: S = struct
 			| Wait channel ->
 				if Hashtbl.mem lut channel
 				then send_ack cout
-			| Spawn (channel, process) ->
+			| Spawn (channel, process_str) ->
 				eprintf "Will spawn !@.";
 				listen_to channel;
-				spawn pids local_addr channel 	process;
+				let process = Marshal.from_string process_str 0 in
+				spawn pids local_addr channel process;
 				send_ack cout
 			| Ask -> assert (not implemented)
 			| Alloc (a, b) -> assert (not implemented)
@@ -295,13 +297,14 @@ module Network: S = struct
 		let cout = out_channel_of_descr sock_root in
 		let cin = in_channel_of_descr sock_root in
 		let c, _ = new_channel () in
+		let process_str = Marshal.to_string process [Marshal.Closures] in
 		connect sock_root local_addr;
-		Marshal.to_channel cout (Spawn (c, process)) [Marshal.Closures];
+		Marshal.to_channel cout (Spawn (c, process_str)) [Marshal.Closures];
 		flush cout;
 		wait_ack cin;
 		eprintf "Wait for root process end@.";
 		let v = match Marshal.from_channel cin with
-			| Send (_, _, str) -> Marshal.from_string str
+			| Send (_, _, str) -> Marshal.from_string str 0
 			| _ -> assert false
 		in
 
