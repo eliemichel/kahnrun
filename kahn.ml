@@ -70,13 +70,14 @@ module Network: S = struct
 	type 'a out_port = int
 
 	type packet =
-	| Send of (int * bool * Marshal.extern_flags list * string) (* int: channel id ; bool: force forwarding ; string: serialized data *)
-	| Listen of int (* Listen to incoming packet on a given channel id — 0 for unspecified *)
-	| Wait of int (* Wait for someone who listen *)
-	| Ask (* Ask for free channel ids *)
-	| Spawn of unit process
-	| Alloc of (int * int) (* Allocate a range of channel ids *)
-	| Ack (* Acknowledgment *)
+		| Send of (int * bool * Marshal.extern_flags list * string)
+		(* int: channel id ; bool: force forwarding ; string: serialized data *)
+		| Listen of int (* Listen to incoming packet on a given channel id — 0 for unspecified *)
+		| Wait of int (* Wait for someone who listen *)
+		| Ask (* Ask for free channel ids *)
+		| Spawn of unit process
+		| Alloc of (int * int) (* Allocate a range of channel ids *)
+		| Ack (* Acknowledgment *)
 
 	let wait_ack cin =
 		while Marshal.from_channel cin <> Ack do () done
@@ -86,10 +87,10 @@ module Network: S = struct
 		flush cout
 
 	let send_wait srvin srvout channel callback packet =
-		(* eprintf "Wait for %d@." channel; *)
+		eprintf "Wait for %d@." channel;
 		Marshal.to_channel srvin (Wait channel) [];
 		flush srvin;
-		(* eprintf "Delay for %d@." channel; *)
+		eprintf "Delay for %d@." channel;
 		Utils.pause wait_delay;
 		callback packet
 
@@ -102,6 +103,7 @@ module Network: S = struct
 				addr = local_addr;
 				id = id
 			};
+			eprintf "End of %d@." id;
 			exit 0
 			)
 		| pid -> pids := pid :: !pids;eprintf "TEST@."
@@ -112,7 +114,7 @@ module Network: S = struct
 		let rec aux = function
 			| Send (channel, force, flags, data) as packet -> (
 				try
-					(* eprintf "Attempt to find %d@." channel; *)
+					eprintf "Attempt to find %d@." channel;
 					let dest = out_channel_of_descr (Hashtbl.find lut channel) in
 						eprintf "Found.@.";
 						Hashtbl.remove lut channel;
@@ -120,7 +122,7 @@ module Network: S = struct
 						flush dest;
 						send_ack cout;
 				with Not_found -> (
-					(* eprintf "Not found.@."; *)
+					eprintf "Not found.@.";
 					if force then send_wait srvin srvout channel aux packet
 					)
 				)
@@ -133,14 +135,20 @@ module Network: S = struct
 				if Hashtbl.mem lut channel
 				then (Marshal.to_channel cout Ack []; flush cout)
 			| Spawn process ->
+				eprintf "Will spawn !@.";
 				spawn pids local_addr process;
 				send_ack cout
 			| Ask -> assert (not implemented)
 			| Alloc (a, b) -> assert (not implemented)
 			| Ack -> ()
 		in
-			aux (Marshal.from_channel cin)
-
+			try
+				while true do
+					match select [node] [] [] timeout with
+					| [node], [], [] -> aux (Marshal.from_channel cin)
+					| _ -> ()
+				done
+			with _ -> ()
 
 	let rec accepter (sock, handler) =
 		let node, addr = accept sock in
@@ -148,7 +156,6 @@ module Network: S = struct
 			let th = Thread.create handler node in
 				accepter (sock, handler);
 				Thread.join th
-
 
 	let init () =
 		eprintf "Starting node...@.";
@@ -233,7 +240,6 @@ module Network: S = struct
 			wait_ack cin;
 			eprintf "Done.@."
 
-
 	let rec get c env =
 		eprintf "-- get from %d@." c;
 		let sock = socket PF_UNIX SOCK_STREAM 0 in
@@ -243,7 +249,10 @@ module Network: S = struct
 			Marshal.to_channel cout (Listen c) [];
 			flush cout;
 			wait_ack cin;
-			Marshal.from_channel cin
+			match Marshal.from_channel cin with
+			| Send (channel, force, flags, data) ->
+				Marshal.from_string data 0
+			| _ -> assert false
 	
 	let doco l env =
 		eprintf "-- doco @@%d@." env.id;
@@ -260,7 +269,9 @@ module Network: S = struct
 				eprintf "* Acked@."
 			) l
 	
-	let return v = (fun env -> v)
+	let return v env =
+		(* eprintf "-- return @@%d@." env.id; *)
+		v
 	
 	let bind e e' env =
 		eprintf "-- bind @@%d@." env.id;

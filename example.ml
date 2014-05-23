@@ -8,7 +8,7 @@ module Example (K : Kahn.S) = struct
       (K.put n qo) >>= (fun () -> loop (n + 1))
     in
     loop 2
-
+ 
   let output (qi : int K.in_port) : unit K.process =
     let rec loop () =
       (K.get qi) >>= (fun v -> if v = 1000000 then ignore(1/0) else Format.printf "%d@." v; loop ())
