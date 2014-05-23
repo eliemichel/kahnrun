@@ -238,6 +238,7 @@ module Network: S = struct
 			flush cout;
 			eprintf "wait ack...@.";
 			wait_ack cin;
+			shutdown sock SHUTDOWN_ALL;
 			eprintf "Done.@."
 
 	let rec get c env =
@@ -249,10 +250,13 @@ module Network: S = struct
 			Marshal.to_channel cout (Listen c) [];
 			flush cout;
 			wait_ack cin;
-			match Marshal.from_channel cin with
-			| Send (channel, force, flags, data) ->
-				Marshal.from_string data 0
-			| _ -> assert false
+			let v = match Marshal.from_channel cin with
+				| Send (channel, force, flags, data) ->
+					Marshal.from_string data 0
+				| _ -> assert false
+			in
+				shutdown sock SHUTDOWN_ALL;
+				v
 	
 	let doco l env =
 		eprintf "-- doco @@%d@." env.id;
