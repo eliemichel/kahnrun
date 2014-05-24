@@ -76,8 +76,11 @@ module Network: S = struct
 		| Wait of int (* Wait for someone who listen *)
 		| Ask (* Ask for free channel ids *)
 		| Spawn of (int * string)
+		| Register of sockaddr
 		| Alloc of (int * int) (* Allocate a range of channel ids *)
 		| Ack (* Acknowledgment *)
+
+	let peers = ref []
 
 	let wait_ack cin =
 		while Marshal.from_channel cin <> Ack do () done
@@ -182,7 +185,21 @@ module Network: S = struct
 			put v channel env;
 			exit 0
 			)
-		| pid -> pids := pid :: !pids;eprintf "TEST@."
+		| pid -> pids := pid :: !pids
+
+	let handler_serv srvout inet_addr =
+		while true do
+			let addr = Marshal.from_channel srvout in
+			eprintf "New node registered from %s@." (print_sockaddr addr);
+			let sock = socket PF_UNIX SOCK_STREAM 0 in
+			let cout = out_channel_of_descr sock in
+			let cin = in_channel_of_descr sock in
+			connect sock addr;
+			Marshal.to_channel cout (Register inet_addr) [];
+			wait_ack cin;
+			shutdown sock SHUTDOWN_ALL;
+			peers := addr :: !peers
+		done
 
 	let handle_all srvin srvout pids local_addr lut node =
 		let cin  = in_channel_of_descr node in
@@ -219,6 +236,10 @@ module Network: S = struct
 				let process = Marshal.from_string process_str 0 in
 				spawn pids local_addr channel process;
 				send_ack cout
+			| Register addr ->
+				eprintf "Node registered from %s@." (print_sockaddr addr);
+				peers := addr :: !peers;
+				send_ack cout
 			| Ask -> assert (not implemented)
 			| Alloc (a, b) -> assert (not implemented)
 			| Ack -> ()
@@ -233,7 +254,7 @@ module Network: S = struct
 
 	let rec accepter (sock, handler) =
 		let node, addr = accept sock in
-			eprintf "Node input from %s@." (print_sockaddr addr);
+			eprintf "Process input from %s@." (print_sockaddr addr);
 			let th = Thread.create handler node in
 				accepter (sock, handler);
 				Thread.join th
@@ -243,27 +264,20 @@ module Network: S = struct
 		let lut : (int, file_descr) Hashtbl.t = Hashtbl.create 17 in
 		let pids = ref [] in
 
-		let serv = socket PF_INET SOCK_STREAM 0 in
-		let srvin = out_channel_of_descr serv in
-		let srvout = in_channel_of_descr serv in
-		eprintf "Waiting for master...@.";
-		let rec try_loop () =
-			try connect serv master_addr
-			with Unix_error (ECONNREFUSED, "connect", "") -> try_loop ()
-		in
-		try_loop ();
-		eprintf "Connection established.@.";
-
 		let interface_inet = socket PF_INET SOCK_STREAM 0 in
 		eprintf "Starting inet interface...@.";
 		let rec aux () =
 			let port = random_port () in
 			eprintf "Trying port %d...@." port;
 			(
-				try Unix.bind interface_inet (make_addr "localhost" port)
+				try
+					let addr = make_addr "localhost" port in
+						Unix.bind interface_inet addr;
+						addr
 				with _ -> aux ()
 			)
-		in aux ();
+		in
+		let inet_addr = aux () in
 		listen interface_inet max_chans;
 		eprintf "Inet interface runing.@.";
 
@@ -285,10 +299,22 @@ module Network: S = struct
 		listen interface_local max_chans;
 		eprintf "Local interface runing.@.";
 
+		let serv = socket PF_INET SOCK_STREAM 0 in
+		let srvin = out_channel_of_descr serv in
+		let srvout = in_channel_of_descr serv in
+		eprintf "Waiting for master...@.";
+		let rec try_loop () =
+			try connect serv master_addr
+			with Unix_error (ECONNREFUSED, "connect", "") -> try_loop ()
+		in
+		try_loop ();
+		eprintf "Connection established.@.";
+		Marshal.to_channel srvin inet_addr [];
+
 		let handler = handle_all srvin srvout pids local_addr lut in
 		let th_inet = Thread.create accepter (interface_inet, handler) in
 		let th_local = Thread.create accepter (interface_local, handler) in
-		let th_local = Thread.create accepter (interface_local, handler) in
+		let th_serv = Thread.create (handler_serv srvout) inet_addr in
 		eprintf "Node running.@.";
 
 
@@ -310,6 +336,7 @@ module Network: S = struct
 
 		Thread.join th_inet;
 		Thread.join th_local;
+		Thread.join th_serv;
 		List.iter (fun pid -> ignore (waitpid [] pid)) !pids;
 
 		shutdown serv SHUTDOWN_ALL;
