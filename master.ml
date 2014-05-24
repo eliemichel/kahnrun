@@ -1,11 +1,12 @@
 open Unix
 open Utils
 open Params
+open Format
 
 
 (** Master est juste un serveur d'écho pour servir aux différents paires à s'identifier. *)
 let run () =
-	Format.eprintf "Searching for nodes...@.";
+	eprintf "Searching for nodes...@.";
 	let nodes = ref [] in
 	let sock_serv = socket PF_INET SOCK_STREAM 0 in
 	bind sock_serv master_addr;
@@ -18,6 +19,7 @@ let run () =
 			match read fdin buffer 0 buffer_size with
 			| 0 -> ()
 			| n ->
+				eprintf "broadcast: %s@." buffer;
 				List.iter (fun node ->
 					if node != fdin || echo_on
 					then ignore (write node buffer 0 n)
@@ -30,7 +32,7 @@ let run () =
 
 	let rec research () =
 		let node, addr = accept sock_serv in
-			Format.eprintf "Node found at %s@." (print_sockaddr addr);
+			eprintf "Node found at %s@." (print_sockaddr addr);
 			nodes := node :: !nodes;
 			let th = Thread.create broadcast node in
 				research ();

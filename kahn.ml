@@ -190,18 +190,15 @@ module Network: S = struct
 	let handler_serv srvout inet_addr =
 		while true do
 			let addr = Marshal.from_channel srvout in
-			if addr <> inet_addr
-			then (
-				eprintf "New node registered from %s@." (print_sockaddr addr);
-				let sock = socket PF_UNIX SOCK_STREAM 0 in
-				let cout = out_channel_of_descr sock in
-				let cin = in_channel_of_descr sock in
-				connect sock addr;
-				Marshal.to_channel cout (Register inet_addr) [];
-				wait_ack cin;
-				shutdown sock SHUTDOWN_ALL;
-				peers := addr :: !peers
-			)
+			eprintf "New node registered from %s@." (print_sockaddr addr);
+			let sock = socket PF_UNIX SOCK_STREAM 0 in
+			let cout = out_channel_of_descr sock in
+			let cin = in_channel_of_descr sock in
+			connect sock addr;
+			Marshal.to_channel cout (Register inet_addr) [];
+			wait_ack cin;
+			shutdown sock SHUTDOWN_ALL;
+			peers := addr :: !peers
 		done
 
 	let handle_all srvin srvout pids local_addr lut node =
@@ -332,9 +329,17 @@ module Network: S = struct
 		flush cout;
 		wait_ack cin;
 		eprintf "Wait for root process end@.";
-		let v = match Marshal.from_channel cin with
-			| Send (_, _, str) -> Marshal.from_string str 0
-			| _ -> assert false
+
+		let v =
+			if Array.length Sys.argv > 1 && Sys.argv.(1) = "--root" then
+				match Marshal.from_channel cin with
+				| Send (_, _, str) -> Marshal.from_string str 0
+				| _ -> assert false
+			else (
+				eprintf "Run as child node !@.";
+				while true do () done; (* XXX c'est moche *)
+				raise End_of_file
+			)
 		in
 
 		Thread.join th_inet;
