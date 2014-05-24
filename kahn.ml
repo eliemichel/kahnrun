@@ -89,10 +89,18 @@ module Network: S = struct
 		Marshal.to_channel cout Ack [];
 		flush cout
 
-	let send_wait srvin srvout channel callback packet =
+	let send_wait channel callback packet =
 		eprintf "Wait for %d@." channel;
-		Marshal.to_channel srvin (Wait channel) [];
-		flush srvin;
+		List.iter (fun addr ->
+			let sock = socket PF_UNIX SOCK_STREAM 0 in
+			let cout = out_channel_of_descr sock in
+			let cin = in_channel_of_descr sock in
+				connect sock addr;
+				Marshal.to_channel cout (Wait channel) [];
+				flush cout;
+				wait_ack cin;
+				shutdown sock SHUTDOWN_ALL
+		) !peers;
 		eprintf "Delay for %d@." channel;
 		Utils.pause wait_delay;
 		callback packet
@@ -188,7 +196,9 @@ module Network: S = struct
 		| pid -> pids := pid :: !pids
 
 	let handler_serv srvout inet_addr =
+		eprintf "Listening to the master server@.";
 		while true do
+			eprintf "Listening to the master server (try again)@.";
 			let addr = Marshal.from_channel srvout in
 			eprintf "New node registered from %s@." (print_sockaddr addr);
 			let sock = socket PF_UNIX SOCK_STREAM 0 in
@@ -220,7 +230,7 @@ module Network: S = struct
 						send_ack cout;
 				with Not_found -> (
 					eprintf "Not found.@.";
-					if force then send_wait srvin srvout channel aux packet
+					if force then send_wait channel aux packet
 					)
 				)
 			| Listen channel ->
@@ -252,11 +262,11 @@ module Network: S = struct
 				done
 			with _ -> ()
 
-	let rec accepter (sock, handler) =
+	let rec accepter sock handler =
 		let node, addr = accept sock in
 			eprintf "Process input from %s@." (print_sockaddr addr);
 			let th = Thread.create handler node in
-				accepter (sock, handler);
+				accepter sock handler;
 				Thread.join th
 
 	let run process =
@@ -310,46 +320,50 @@ module Network: S = struct
 		try_loop ();
 		eprintf "Connection established.@.";
 		Marshal.to_channel srvin inet_addr [];
+		flush srvin;
 
 		let handler = handle_all srvin srvout pids local_addr lut in
-		let th_inet = Thread.create accepter (interface_inet, handler) in
-		let th_local = Thread.create accepter (interface_local, handler) in
+		let th_inet = Thread.create (accepter interface_inet) handler in
+		let th_local = Thread.create (accepter interface_local) handler in
 		let th_serv = Thread.create (handler_serv srvout) inet_addr in
 		eprintf "Node running.@.";
 
+		let close () =
+			Thread.join th_inet;
+			Thread.join th_local;
+			Thread.join th_serv;
+			List.iter (fun pid -> ignore (waitpid [] pid)) !pids;
 
-		eprintf "Launch root process.@.";
-		let sock_root = socket PF_UNIX SOCK_STREAM 0 in
-		let cout = out_channel_of_descr sock_root in
-		let cin = in_channel_of_descr sock_root in
-		let c, _ = new_channel () in
-		let process_str = Marshal.to_string process [Marshal.Closures] in
-		connect sock_root local_addr;
-		Marshal.to_channel cout (Spawn (c, process_str)) [Marshal.Closures];
-		flush cout;
-		wait_ack cin;
-		eprintf "Wait for root process end@.";
-
-		let v =
-			if Array.length Sys.argv > 1 && Sys.argv.(1) = "--root" then
-				match Marshal.from_channel cin with
-				| Send (_, _, str) -> Marshal.from_string str 0
-				| _ -> assert false
-			else (
-				eprintf "Run as child node !@.";
-				while true do () done; (* XXX c'est moche *)
-				raise End_of_file
-			)
+			shutdown serv SHUTDOWN_ALL;
+			shutdown interface_inet SHUTDOWN_ALL;
+			shutdown interface_local SHUTDOWN_ALL
 		in
+		
+		if Array.length Sys.argv > 1 && Sys.argv.(1) = "--root" then (
 
-		Thread.join th_inet;
-		Thread.join th_local;
-		Thread.join th_serv;
-		List.iter (fun pid -> ignore (waitpid [] pid)) !pids;
+			eprintf "Launch root process.@.";
+			let sock_root = socket PF_UNIX SOCK_STREAM 0 in
+			let cout = out_channel_of_descr sock_root in
+			let cin = in_channel_of_descr sock_root in
+			let c, _ = new_channel () in
+			let process_str = Marshal.to_string process [Marshal.Closures] in
+			connect sock_root local_addr;
+			Marshal.to_channel cout (Spawn (c, process_str)) [Marshal.Closures];
+			flush cout;
+			wait_ack cin;
+			eprintf "Wait for root process end@.";
 
-		shutdown serv SHUTDOWN_ALL;
-		shutdown interface_inet SHUTDOWN_ALL;
-		shutdown interface_local SHUTDOWN_ALL;
-		v
+			match Marshal.from_channel cin with
+			| Send (_, _, str) ->
+				close();
+				Marshal.from_string str 0
+			| _ -> assert false
+
+		)
+		else (
+			eprintf "Run as child node !@.";
+			close();
+			raise End_of_file
+		)
 
 end
