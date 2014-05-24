@@ -79,6 +79,8 @@ module Network: S = struct
 		| Alloc of (int * int) (* Allocate a range of channel ids *)
 		| Ack (* Acknowledgment *)
 
+	let open_nodes = ref []
+
 	let wait_ack cin =
 		while Marshal.from_channel cin <> Ack do () done
 
@@ -222,21 +224,14 @@ module Network: S = struct
 			| Ask -> assert (not implemented)
 			| Alloc (a, b) -> assert (not implemented)
 			| Ack -> ()
-		in
-			try
-				while true do
-					match select [node] [] [] timeout with
-					| [node], [], [] -> aux (Marshal.from_channel cin)
-					| _ -> ()
-				done
-			with _ -> ()
+		in aux (Marshal.from_channel cin)
 
-	let rec accepter (sock, handler) =
+	let rec accepter sock handler =
 		let node, addr = accept sock in
 			eprintf "Node input from %s@." (print_sockaddr addr);
-			let th = Thread.create handler node in
-				accepter (sock, handler);
-				Thread.join th
+			open_nodes := node :: !open_nodes;
+			handler node;
+			eprintf "## Handled@."
 
 	let run process =
 		eprintf "Starting node...@.";
@@ -285,36 +280,63 @@ module Network: S = struct
 		listen interface_local max_chans;
 		eprintf "Local interface runing.@.";
 
-		let handler = handle_all srvin srvout pids local_addr lut in
-		let th_inet = Thread.create accepter (interface_inet, handler) in
-		let th_local = Thread.create accepter (interface_local, handler) in
-		let th_local = Thread.create accepter (interface_local, handler) in
 		eprintf "Node running.@.";
 
 
-		eprintf "Launch root process.@.";
+		eprintf "Launch root process...@.";
 		let sock_root = socket PF_UNIX SOCK_STREAM 0 in
-		let cout = out_channel_of_descr sock_root in
-		let cin = in_channel_of_descr sock_root in
+		let rootout = out_channel_of_descr sock_root in
+		let rootin = in_channel_of_descr sock_root in
 		let c, _ = new_channel () in
 		let process_str = Marshal.to_string process [Marshal.Closures] in
-		connect sock_root local_addr;
-		Marshal.to_channel cout (Spawn (c, process_str)) [Marshal.Closures];
-		flush cout;
-		wait_ack cin;
-		eprintf "Wait for root process end@.";
-		let v = match Marshal.from_channel cin with
-			| Send (_, _, str) -> Marshal.from_string str 0
-			| _ -> assert false
-		in
 
-		Thread.join th_inet;
-		Thread.join th_local;
+		let th = Thread.create (fun () ->
+			connect sock_root local_addr;
+			Marshal.to_channel rootout (Spawn (c, process_str)) [Marshal.Closures];
+			flush rootout;
+			wait_ack rootin;
+			eprintf "Root process launched.@.";
+		) ()
+		in
+		
+		eprintf "Start main listening loop.@.";
+
+		let handler = handle_all srvin srvout pids local_addr lut in
+		let v = (
+			try
+				(while true do
+					let connections = serv :: interface_inet :: interface_local :: sock_root :: !open_nodes in
+					let l, _, _ = select connections [] [] (-1.) in
+					eprintf "selected@.";
+					List.iter (fun sock ->
+						if sock = serv then (
+							()
+						) else if sock = sock_root then (
+							match Marshal.from_channel rootin with
+							| Send (_, _, str) -> raise (Return str)
+							| _ -> assert false
+						) else if sock = interface_inet || sock = interface_local then (
+							eprintf "# accepted?@.";
+							accepter sock handler;
+							eprintf "# accepted.@."
+						) else (
+							try handler sock
+							with End_of_file -> open_nodes := List.filter ((<>) sock) !open_nodes
+						)
+					) l
+				done;
+				assert false)
+			with Return str -> Marshal.from_string str 0
+		) in
+		eprintf "Process ending.@.";
+
+		Thread.join th;
 		List.iter (fun pid -> ignore (waitpid [] pid)) !pids;
 
 		shutdown serv SHUTDOWN_ALL;
 		shutdown interface_inet SHUTDOWN_ALL;
 		shutdown interface_local SHUTDOWN_ALL;
+		eprintf "Node stopped.@.";
 		v
 
 end

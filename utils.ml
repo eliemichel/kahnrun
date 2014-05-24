@@ -49,3 +49,5 @@ let close_all_fd () =
 	with Not_found -> ()
 
 let implemented = true
+
+exception Return of string
