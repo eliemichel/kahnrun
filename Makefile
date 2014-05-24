@@ -14,7 +14,7 @@ handcut:
 	$(OCAMLBUILD) handcut_slave3.$(TARGET)
 
 test:
-	$(OCAMLBUILD) test.$(TARGET)
+	$(OCAMLBUILD) testclient.$(TARGET)
 
 clean:
 	$(OCAMLBUILD) -clean

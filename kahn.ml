@@ -190,15 +190,18 @@ module Network: S = struct
 	let handler_serv srvout inet_addr =
 		while true do
 			let addr = Marshal.from_channel srvout in
-			eprintf "New node registered from %s@." (print_sockaddr addr);
-			let sock = socket PF_UNIX SOCK_STREAM 0 in
-			let cout = out_channel_of_descr sock in
-			let cin = in_channel_of_descr sock in
-			connect sock addr;
-			Marshal.to_channel cout (Register inet_addr) [];
-			wait_ack cin;
-			shutdown sock SHUTDOWN_ALL;
-			peers := addr :: !peers
+			if addr <> inet_addr
+			then (
+				eprintf "New node registered from %s@." (print_sockaddr addr);
+				let sock = socket PF_UNIX SOCK_STREAM 0 in
+				let cout = out_channel_of_descr sock in
+				let cin = in_channel_of_descr sock in
+				connect sock addr;
+				Marshal.to_channel cout (Register inet_addr) [];
+				wait_ack cin;
+				shutdown sock SHUTDOWN_ALL;
+				peers := addr :: !peers
+			)
 		done
 
 	let handle_all srvin srvout pids local_addr lut node =
