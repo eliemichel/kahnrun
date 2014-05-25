@@ -4,6 +4,7 @@ OCAMLBUILD=ocamlbuild -classic-display \
 TARGET=native
 
 example:
+	rm /tmp/kahn*
 	$(OCAMLBUILD) master.$(TARGET)
 	$(OCAMLBUILD) example.$(TARGET)
 
