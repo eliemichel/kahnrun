@@ -102,9 +102,9 @@ module Network: S = struct
 	let broadcast packet =
 		List.iter (fun addr -> send_packet PF_INET addr packet) !peers
 
-	let send_wait channel callback packet =
+	let send_wait channel return_addr callback packet =
 		eprintf "Wait for %d@." channel;
-		broadcast (Wait channel);
+		broadcast (Wait (channel, return_addr));
 		eprintf "Delay for %d@." channel;
 		Utils.pause wait_delay;
 		callback packet
@@ -124,7 +124,7 @@ module Network: S = struct
 		let cout = out_channel_of_descr sock in
 		let cin = in_channel_of_descr sock in
 			connect sock env.addr;
-			Marshal.to_channel cout (Listen c) [];
+			Marshal.to_channel cout (Listen (c, None)) [];
 			flush cout;
 			wait_ack cin;
 			let v = match Marshal.from_channel cin with
@@ -214,8 +214,12 @@ module Network: S = struct
 				s
 			| None -> node
 		in
+		let lut_item_of_option = function
+			| Some addr -> Address addr
+			| None -> Socket node
+		in
 		let listen_to channel return_addr =
-			Hashtbl.add lut channel (sock_of_option return_addr)
+			Hashtbl.add lut channel (lut_item_of_option return_addr)
 		in
 		let rec aux = function
 			| Send (channel, force, data) as packet -> (
@@ -230,7 +234,7 @@ module Network: S = struct
 						send_ack cout;
 				with Not_found -> (
 					eprintf "Not found.@.";
-					if force then send_wait channel aux packet
+					if force then send_wait channel (Some local_addr) aux packet
 					)
 				)
 			| Listen (channel, return_addr) ->
@@ -242,8 +246,10 @@ module Network: S = struct
 				if Hashtbl.mem lut channel
 				then (
 					eprintf "################@.";
-					(try send_packet PF_INET (sock_of_option return_addr) (Listen channel)
-					with Not_found -> ());
+					(match return_addr with
+					| Some addr -> send_packet PF_INET addr (Listen (channel, Some local_addr))
+					| None -> ()
+					);
 					eprintf "################ack@.";
 				);
 				send_ack cout
@@ -255,7 +261,8 @@ module Network: S = struct
 				)
 				else (
 					eprintf "Will spawn !@.";
-					listen_to channel;
+					listen_to channel (Some local_addr);
+					eprintf "Will spawn !2 le retour@.";
 					let process = Marshal.from_string process_str 0 in
 					spawn pids local_addr channel process;
 					send_ack cout
