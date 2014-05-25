@@ -21,31 +21,4 @@ let pause delay =
 let random_port () =
 	1024 + Random.int 64611
 
-let escape_hyperchan str =
-	try
-		ignore (String.index str '!');
-		raise (Invalid_argument "hyperchan should not contain exclamation mark ('!')")
-	with Not_found -> str
-
-let dummy_address = make_addr "localhost" 0
-
-
-let close_all_fd () =
-	Format.eprintf "close all fd@.";
-	let dir = opendir "/proc/self/fd" in
-	try
-		while true do
-			let sfd = readdir dir in
-			if sfd <> "." && sfd <> ".."
-			then (
-				let fd : file_descr = Obj.magic (int_of_string sfd) in (* You shall never do that *)
-				if fd <> stdin && fd <> stdout && fd <> stderr
-				then (
-					close fd;
-					Format.eprintf "close fd %s@." sfd
-				)
-			)
-		done
-	with Not_found -> ()
-
 let implemented = true

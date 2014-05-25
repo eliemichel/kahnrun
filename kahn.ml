@@ -4,13 +4,6 @@ open Unix
 open Sys
 open Format
 
-let make_addr serv port =
-	let host = (gethostbyname serv).h_addr_list.(0) in
-	ADDR_INET (host, port)
-
-let master_addr = make_addr "localhost" 4455
-let max_slaves = 4
-
 module type S = sig
   type 'a process
   type 'a in_port
@@ -89,35 +82,14 @@ module Network: S = struct
 		Marshal.to_channel cout Ack [];
 		flush cout
 
-	let send_wait channel callback packet =
-		eprintf "Wait for %d@." channel;
-		List.iter (fun addr ->
-			let sock = socket PF_UNIX SOCK_STREAM 0 in
-			let cout = out_channel_of_descr sock in
-			let cin = in_channel_of_descr sock in
-				connect sock addr;
-				Marshal.to_channel cout (Wait channel) [];
-				flush cout;
-				wait_ack cin;
-				shutdown sock SHUTDOWN_ALL
-		) !peers;
-		eprintf "Delay for %d@." channel;
-		Utils.pause wait_delay;
-		callback packet
 
-
-	let new_channel () =
-		let chan = Random.int 99999 in
-			chan, chan
-	
-	let put v c env =
-		eprintf "-- put on %d@." c;
-		let sock = socket PF_UNIX SOCK_STREAM 0 in
+	let send_packet domain addr packet =
+		eprintf "--- Send packet@.";
+		let sock = socket domain SOCK_STREAM 0 in
 		let cout = out_channel_of_descr sock in
 		let cin = in_channel_of_descr sock in
-		let packet = Send (c, true, Marshal.to_string v [Marshal.Closures]) in
 			eprintf "connect...@.";
-			connect sock env.addr;
+			connect sock addr;
 			eprintf "send...@.";
 			Marshal.to_channel cout packet [];
 			flush cout;
@@ -125,6 +97,25 @@ module Network: S = struct
 			wait_ack cin;
 			shutdown sock SHUTDOWN_ALL;
 			eprintf "Done.@."
+
+	let broadcast packet =
+		List.iter (fun addr -> send_packet PF_INET addr packet) !peers
+
+	let send_wait channel callback packet =
+		eprintf "Wait for %d@." channel;
+		broadcast (Wait channel);
+		eprintf "Delay for %d@." channel;
+		Utils.pause wait_delay;
+		callback packet
+
+	let new_channel () =
+		let chan = Random.int 99999 in
+			chan, chan
+	
+	let put v c env =
+		eprintf "-- put on %d@." c;
+		let packet = Send (c, true, Marshal.to_string v [Marshal.Closures]) in
+			send_packet PF_UNIX env.addr packet
 
 	let rec get c env =
 		eprintf "-- get from %d@." c;
@@ -178,6 +169,13 @@ module Network: S = struct
 
 	(* ===== Init dependencies =====*)
 
+	let get_peer addr =
+		let rec aux = function
+			| [] -> raise Not_found
+			| ADDR_INET _ as addr :: q -> addr
+			| _ :: q -> aux q
+		in aux !peers
+
 	let spawn pids local_addr channel process =
 		match fork () with
 		| 0 -> (
@@ -201,22 +199,16 @@ module Network: S = struct
 			eprintf "Listening to the master server (try again)@.";
 			let addr = Marshal.from_channel srvout in
 			eprintf "New node registered from %s@." (print_sockaddr addr);
-			let sock = socket PF_UNIX SOCK_STREAM 0 in
-			let cout = out_channel_of_descr sock in
-			let cin = in_channel_of_descr sock in
-			connect sock addr;
-			Marshal.to_channel cout (Register inet_addr) [];
-			wait_ack cin;
-			shutdown sock SHUTDOWN_ALL;
+			send_packet PF_INET addr (Register inet_addr);
 			peers := addr :: !peers
 		done
 
-	let handle_all srvin srvout pids local_addr lut node =
+	let handle_all srvin srvout pids local_addr lut node addr =
 		let cin  = in_channel_of_descr node in
 		let cout  = out_channel_of_descr node in
 		let listen_to channel =
 			Hashtbl.add lut channel node
-			(* XXX broadcast *)
+			(* pas de broadcast sinon on boucle *)
 		in
 		let rec aux = function
 			| Send (channel, force, data) as packet -> (
@@ -239,7 +231,11 @@ module Network: S = struct
 				send_ack cout
 			| Wait channel ->
 				if Hashtbl.mem lut channel
-				then send_ack cout
+				then (
+					try send_packet PF_INET (get_peer addr) (Listen channel)
+					with Not_found -> ()
+				);
+				send_ack cout
 			| Spawn (channel, process_str) ->
 				eprintf "Will spawn !@.";
 				listen_to channel;
@@ -265,7 +261,7 @@ module Network: S = struct
 	let rec accepter sock handler =
 		let node, addr = accept sock in
 			eprintf "Process input from %s@." (print_sockaddr addr);
-			let th = Thread.create handler node in
+			let th = Thread.create (handler node) addr in
 				accepter sock handler;
 				Thread.join th
 
@@ -330,8 +326,11 @@ module Network: S = struct
 
 		let close () =
 			Thread.join th_inet;
+			eprintf "inet interface ended.@.";
 			Thread.join th_local;
+			eprintf "local interface ended.@.";
 			Thread.join th_serv;
+			eprintf "master interface ended.@.";
 			List.iter (fun pid -> ignore (waitpid [] pid)) !pids;
 
 			shutdown serv SHUTDOWN_ALL;
