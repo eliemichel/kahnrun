@@ -10,7 +10,22 @@ Jonathan Laurent
 Élie Michel
 
 
-**Note :** Ce `readme` n'a pas pour vocation d'être un guide d'utilisation des sources comme l'est usuellement un `readme`. Il sert à avoir un aperçu des difficultés que l'on a pu rencontrer pendant le projet et peut également nous servir de mémo ou de moyen de communication plus intelligible que des commentaires dans du code.
+Guide rapide
+------------
+
+ * `make` pour créer les exécutables
+ * `make clean` pour supprimer les fichiers de compilation
+ * `master.native` serveur central
+ * `example.native` est le programme généré à partir du réseau de Kahn. Lancer une instance sur chaque machine et ajoute le paramètre `--root` à la dernière afin qu'elle lance le premier processus.
+ * `testclient.native` test du serveur central. Avec le paramètre `echo_on` (dans `params.ml`) il se comporte comme un client de tchat très basique.
+ * `params.ml` constantes hardcodées à modifier à loisir
+ * `ray/` Raytracer non parallélisé
+ * `newray/` Raytracer utilisant l'interface des réseaux de Kahn. La version actuelle utilise un effet de bord qui ne la rend efficace qu'avec les threads ou l'implémentation séquentielle mais la modification pour le rendre vraiment parallèle est mineure.
+
+
+
+Rapport
+=======
 
 Afin de le rendre plus agréable à la fois à lire et à rédiger, ce rapport prend la forme d'une liste de notes thématiques. Elles sont classées par ordre chronologique afin de mettre en évidence l'évolution de nos réflexions.
 
@@ -23,13 +38,10 @@ J'ai mis du temps à comprendre l'intérêt de la construction `delay`. Elle sem
 
 La version `delay` crée un processus à partir de `f` et`x` séparément et qui calcule *une fois lancé* la valeur `f x` avant de la retourner. Ce qui est important est que le calcul se fait dans le processus et permet donc de profiter des mécanismes de parallèlisme de l'implémentation.
 
-*Élie, 14.05*
 
 
 
-
-
-Pourquoi la version en réseau m'emmerde
+Pourquoi la version en réseau m'emmbête
 ---------------------------------------
 
 
@@ -60,9 +72,6 @@ Dans les solutions, on peut alors envisager :
   - Ou alors on utilise un langage déjà existant, mais comprendre un interpreteur déjà existant, c'est un travail de longue haleine et on n'a clairement pas le temps de se lancer là-dedans.
 
 Bon, donc en fait j'ai pas de solution actuellement, il faut qu'on y réfléchisse.
-
-*Élie, 14.05*
-
 
 
 
@@ -100,8 +109,6 @@ Ainsi, une fois tous les hyperchans apairés, le serveur n'est plus utile et peu
 
 La séparation en plusieurs fichiers peut sembler un peu rigide puisqu'elle fixe le nombre de machines. On peut cependant faire tourner plusieurs nœuds sur la même machine donc en prévoire un nombre conséquent dès le début. On peut également par la suite imaginer dupliquer les nœuds et prendre en compte la réponse de la plus réactive. Il faudra cependant être attentif à ce moment à bien gérer les lectures multiples dans un même hyperchan.
 
-*Élie, 15.05*
-
 
 
 
@@ -112,8 +119,6 @@ Le retour de Marshal
 Bon, en fait il semblerait que le module Marshal fonctionne… Le source de mon erreur est simple : j ne l'avais testé que dans le toplevel. Or, le fonctionnement de ce module est asez simple : il transmet les fonctions sous leur forme compilée. Donc forcément, dans le toplevel — qui ne compile pas — ça ne pouvait pas marcher.
 
 Du coup, maintenant que la version précédemment designée est presque terminée, je vais la finir, puis je vais reprendre l'idée initiale, basée sur Marshal.
-
-*Élie, 18.06*
 
 
 
@@ -131,6 +136,33 @@ Le module `Handcut` en est une copie complètant l'interface avec les fonctions 
 
 Le fichier `utils.ml` est le passage forcé de tout développement en OCaml : il complète les fonctions de la bibliothèque standard avec de petites fonctions usuelles. S'il devenait trop important, on pourraît envisager de le découper en sections thèmatiques mais ce n'est pour le moment pas nécessaire.
 
-*Élie, 18.06*
 
+
+
+Exemple de programme hautement parallèle : un raytracer
+-------------------------------------------------------
+
+Il nous fallait un bon exemple d'utilisation des réseaux de Kahn, c'est à dire un algorithme parallèle et intéressant. Le raytracer est un bon exemple d'une part pour son aspect ludique et d'autre part car il est simple à paralléliser : chaque pixel peut être rendu séparément. Afin de séparer les différents problèmes, j'ai préféré commencer par coder le raytracer le plus proprement possible sans penser aux réseaux de Kahn et ne le plier à cette interface que dans un second temps.
+
+Le raytracer est assez simple, il ne gère en fait pas de rebonds de lumières et devrait plutôt être appeler un rasterizer. Il est plus proche d'un rendu en temps réel (dans l'algo, pas dans l'efficacité…) que d'un véritable rendu de raytracer. Mais il est prévu pour être extensible et devrait être aisément complété.
+
+Il prend en entrée des fichiers dans un format inspiré de celui de POV-ray et peut être exporté depuis Blender à l'aide d'un petit script python.
+
+
+
+Organisation de la version en réseau
+------------------------------------
+
+J'ai mis vraiment du temps à trouver un organisation qui me convienne et ai eu beaucoup de mal à chacune de mes tentatives à anticiper convenablement les différents problèmes auxquels je devrait faire face, perdant donc un temps incroyable en *refactoring*. Le schéma auquel j'ai fini par aboutir est le suivant :
+
+Dans un but originel de souplesse, je ne voulais pas d'un système centralisé. Le serveur central reste cependant indispensable que les nœuds puissent établir une première connection. Il n'y a en fait qu'un seul paquet par nœud lancé qui ne transite par le serveur maître et une fois tous les nœuds identifiés il peut être interrompu. (En pratique non, ça lève une exception, mais il suffirait de la rattraper).
+
+Chaque nœud est en fait une sorte de routeur faisant l'interface entre des processus locaux et les autres nœuds. Il possède donc une table faisant la correspondance entre des identifiants de cannaux de communication (des entiers en pratique, c'est l'identifiant le plus simple qui soit) et des descripteurs de fichiers.
+
+Lorsqu'un paquet arrive — il est envoyé par un processus en se connectant au socket unix local ou un autre nœud se connectant au socket internet — le nœud regarde dans cette *look-up table* s'il sait où router le fichier. Si c'est le cas, il l'envoie tout simplement à sa cible. Sinon, il envoie à tous les nœuds qu'il connaît une demande (paquet `Wait`) pour que ceux qui connaissent l'identifiant de canal demandé le previennent.
+
+
+
+
+Ce rapport aurait pu être étoffé et remis dans une forme plus classique (il servait plûtôt à communiquer entre nous) mais j'ai pas le temps, on est déjà en retard là…
 
