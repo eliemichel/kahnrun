@@ -9,7 +9,7 @@ let run () =
 	eprintf "Searching for nodes...@.";
 	let nodes = ref [] in
 	let sock_serv = socket PF_INET SOCK_STREAM 0 in
-	bind sock_serv master_addr;
+	bind sock_serv (ADDR_INET (inet_addr_any, master_port));
 	listen sock_serv max_nodes;
 	
 
