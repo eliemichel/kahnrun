@@ -74,6 +74,10 @@ module Network: S = struct
 		| Alloc of (int * int) (* Allocate a range of channel ids *)
 		| Ack (* Acknowledgment *)
 
+	type lut_item =
+		| Address of sockaddr
+		| Socket of file_descr
+
 	let peers = ref []
 
 	let wait_ack cin =
@@ -207,13 +211,6 @@ module Network: S = struct
 	let handle_all srvin srvout pids local_addr lut node addr =
 		let cin  = in_channel_of_descr node in
 		let cout  = out_channel_of_descr node in
-		let sock_of_option = function
-			| Some addr ->
-				let s = socket PF_INET SOCK_STREAM 0 in
-				connect s addr;
-				s
-			| None -> node
-		in
 		let lut_item_of_option = function
 			| Some addr -> Address addr
 			| None -> Socket node
@@ -226,12 +223,24 @@ module Network: S = struct
 				eprintf "[packet]Send to %d@." channel;
 				try
 					eprintf "Attempt to find %d@." channel;
-					let dest = out_channel_of_descr (Hashtbl.find lut channel) in
-						eprintf "Found : %s.@." (print_sockaddr (getsockname (Hashtbl.find lut channel)));
+					let dest = Hashtbl.find lut channel in
 						Hashtbl.remove lut channel;
-						Marshal.to_channel dest packet [];
-						flush dest;
-						send_ack cout;
+						match dest with
+						| Address dest -> (
+								eprintf "Found : %s ()@." (print_sockaddr dest);
+								let domain = match dest with
+									| ADDR_INET _ -> PF_INET
+									| ADDR_UNIX _ -> PF_UNIX
+								in
+								send_packet domain dest packet
+							)
+						| Socket dest ->
+							eprintf "Found : %s.@." (print_sockaddr (getsockname dest));
+							let dest = out_channel_of_descr dest in (
+								Marshal.to_channel dest packet [];
+								flush dest;
+								send_ack cout
+							)
 				with Not_found -> (
 					eprintf "Not found.@.";
 					if force then send_wait channel (Some local_addr) aux packet
@@ -292,7 +301,7 @@ module Network: S = struct
 
 	let run process =
 		eprintf "Starting node...@.";
-		let lut : (int, file_descr) Hashtbl.t = Hashtbl.create 17 in
+		let lut : (int, lut_item) Hashtbl.t = Hashtbl.create 17 in
 		let pids = ref [] in
 
 		let interface_inet = socket PF_INET SOCK_STREAM 0 in
