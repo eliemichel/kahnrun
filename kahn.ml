@@ -65,12 +65,16 @@ module Network: S = struct
 	type packet =
 		| Send of (int * bool * string)
 			(* int: channel id ; bool: force forwarding ; string: serialized data *)
-		| Listen of int * sockaddr option
+		| Listen of int
 			(* Listen to incoming packet on a given channel id — 0 for unspecified *)
-		| Wait of int * sockaddr option (* Wait for someone who listen *)
-		| Ask (* Ask for free channel ids *)
+		| Wait of int
+			(* Wait for someone who listen *)
+		| Ask
+			(* Ask for free channel ids *)
 		| Spawn of (int * string)
+			(* Send a process to spawn *)
 		| Register of sockaddr
+			(* Add to lists of peers *)
 		| Alloc of (int * int) (* Allocate a range of channel ids *)
 		| Ack (* Acknowledgment *)
 
@@ -170,12 +174,18 @@ module Network: S = struct
 
 	(* ===== Init dependencies =====*)
 
-	let get_peer addr =
-		let rec aux = function
-			| [] -> raise Not_found
-			| ADDR_INET (addr_inet, _) as addr :: q -> addr
-			| _ :: q -> aux q
-		in aux !peers
+	let get_peer = function
+		(* Un peu foireux et empêche de faire tourner plusieurs nœuds sur la
+		même machine mais pour faire plus propre il fallait ajouter une info
+		de retour aux paquets Listen et Wait et donc modifier la LUT pour
+		pouvoir gérer à la fois des adresses et des sockets. *)
+		| ADDR_INET (addr_inet, _) ->
+			let rec aux = function
+				| [] -> raise Not_found
+				| ADDR_INET (addr_inet', _) as addr :: q when addr_inet' = addr_inet -> addr
+				| _ :: q -> aux q
+			in aux !peers
+		| _ -> raise Not_found
 
 	let spawn pids local_addr channel process =
 		match fork () with
@@ -207,22 +217,23 @@ module Network: S = struct
 	let handle_all srvin srvout pids local_addr lut node addr =
 		let cin  = in_channel_of_descr node in
 		let cout  = out_channel_of_descr node in
-		let sock_of_option = function
-			| Some addr ->
+		let sock_of_option addr =
+			try
+				(* TODO : trouver un moyen de fermer ce socket *)
 				let s = socket PF_INET SOCK_STREAM 0 in
-				connect s addr;
+				connect s (get_peer addr);
 				s
-			| None -> node
+			with Not_found -> node
 		in
-		let listen_to channel return_addr =
-			Hashtbl.add lut channel (sock_of_option return_addr)
+		let listen_to channel =
+			Hashtbl.add lut channel (sock_of_option addr)
 		in
 		let rec aux = function
 			| Send (channel, force, data) as packet -> (
 				eprintf "[packet]Send to %d@." channel;
 				try
 					eprintf "Attempt to find %d@." channel;
-					let dest = out_channel_of_descr (Hashtbl.find lut channel) in
+						let dest = out_channel_of_descr (Hashtbl.find lut channel) in
 						eprintf "Found : %s.@." (print_sockaddr (getsockname (Hashtbl.find lut channel)));
 						Hashtbl.remove lut channel;
 						Marshal.to_channel dest packet [];
@@ -233,16 +244,16 @@ module Network: S = struct
 					if force then send_wait channel aux packet
 					)
 				)
-			| Listen (channel, return_addr) ->
+			| Listen channel ->
 				eprintf "[packet]Listen at %d@." channel;
-				listen_to channel return_addr;
+				listen_to channel;
 				send_ack cout
-			| Wait (channel, return_addr) ->
+			| Wait channel ->
 				eprintf "[packet]Wait for %d@." channel;
 				if Hashtbl.mem lut channel
 				then (
 					eprintf "################@.";
-					(try send_packet PF_INET (sock_of_option return_addr) (Listen channel)
+					(try send_packet PF_INET (get_peer addr) (Listen channel)
 					with Not_found -> ());
 					eprintf "################ack@.";
 				);
