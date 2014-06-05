@@ -148,7 +148,7 @@ let render_pixel scene x y =
 
 
 
-module K = Kahn.Proc
+module K = Kahn.Network
 module KL = Kahn.Lib(K)
 open K
 open KL

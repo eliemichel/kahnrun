@@ -92,7 +92,7 @@ let main filename =
 	exit 0
 
 let () = Arg.parse
-	[]
+	["--root", Arg.Unit (fun () -> ()) , "Run node as root (for Network interface only)"]
 	main
 	"Usage : ray filename.\n\
 	Render a scene.\n\
