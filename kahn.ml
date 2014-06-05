@@ -49,6 +49,107 @@ module Lib (K : S) = struct
     K.run
       ((K.doco ((collect ports [] qo) :: workers)) >>= (fun _ -> K.get qi))
 
+
+
+  (** The scheduler communicates with the workers with messages *)
+
+  type 'a request = 
+  | PingRequest
+  | KillSig
+  | NewTasks of 'a list
+
+  type 'a answer = int * ('a answer_body)
+  and  'a answer_body =
+  | PingAnswer
+  | TasksDone of 'a list  (* workerId, answers *)
+
+
+  (** Creates a process aimed at computing some parallels tasks
+
+      [nWorkers] : number of processes working in parallel, not counting
+      the scheduler
+      [groupSize] : the number of tasks delivered at each message from the scheduler
+ 
+      For each task, all happens as if [handler (computation task)] was called
+      but handler is called by the scheduler and computation by a worker process
+  *)
+
+  let make_scheduler nWorkers groupSize computation handler tasks =
+
+    let sch_in, sch_out = K.new_channel () in 
+    let workersPorts = Array.init nWorkers (fun i -> K.new_channel ()) in
+    let send i m = K.put m (snd workersPorts.(i)) in
+
+    let rec watch nLeft notSent = match nLeft with
+      | 0 -> killWorkersFrom 0
+      | _ ->
+
+        begin
+          K.get sch_in >>= fun (workerId, msg) -> 
+          match msg with
+          (* The worker is ready, we send a new task *)
+          | PingAnswer -> 
+            (* Printf.printf "Ping %d\n" workerId; *)
+            assignTasks nLeft notSent workerId
+
+          | TasksDone answers ->
+            (* Printf.printf "Received %d (size : %d)\n" workerId (List.length answers); *)
+            List.iter handler answers ;
+            assignTasks (nLeft - List.length answers) notSent workerId
+        end
+
+    and assignTasks nLeft notSent workerId = 
+
+      let sending, notSent' = splitAt groupSize notSent in
+      (
+        if sending <> [] then
+          send workerId (NewTasks sending) 
+        else
+          K.return ()
+      ) >>= fun () ->
+      watch nLeft notSent'
+
+    and killWorkersFrom i = 
+      if i >= nWorkers then K.return ()
+      else
+        send i KillSig >>= fun () -> 
+        killWorkersFrom (i + 1)
+    in
+
+    let rec init i =
+      if i >= nWorkers then 
+        watch (List.length tasks) tasks
+      else
+        send i PingRequest >>= fun () -> init (i + 1)
+    in
+
+
+    let rec workerLoop id worker_in sch_out =
+      K.get worker_in >>= fun msg -> match msg with
+      | KillSig -> K.return ()
+
+      | PingRequest -> 
+        K.put (id, PingAnswer) sch_out >>= fun () -> 
+        workerLoop id worker_in sch_out
+
+      | NewTasks tasks ->
+        (* Printf.printf "Task received (worker : %d, size : %d)\n" id (List.length tasks); *)
+        let answers = List.map computation tasks in
+        K.put (id, TasksDone answers) sch_out >>= fun () -> 
+        workerLoop id worker_in sch_out
+
+    in 
+
+    let workers = List.map (fun i -> 
+      workerLoop i (fst workersPorts.(i)) sch_out
+    ) (range 0 (nWorkers - 1))
+
+    in
+
+    K.doco ((init 0) :: workers)
+    
+    
+
 end
 
 

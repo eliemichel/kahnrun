@@ -5,7 +5,7 @@ module Example (K : Kahn.S) = struct
 
   let integers (qo : int K.out_port) : unit K.process =
     let rec loop n =
-      (K.put n qo) >>= (fun () -> loop (n + 1))
+      (K.put n qo) >>= (fun () -> Format.printf "gen %d@." n ; loop (n + 1))
     in
     loop 2
  
