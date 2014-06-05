@@ -29,7 +29,7 @@ test:
 $(BIN): $(SOURCES)
 	@echo "Building $(BIN)..."
 	$(OCAMLBUILD) main.native
-	cp main.native $(BIN)
+	ln -s _build/main.native $(BIN)
 	@echo "$(OK_COLOR)Done.$(NO_COLOR)"
 
 
